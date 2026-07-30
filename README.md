@@ -277,10 +277,11 @@ python3 tools/discovery_tax.py --full-text /tmp/book_skill_work/full_text.txt --
 > **Honest caveats:** (1) the discovery figures are a one-time cost and a *model*
 > using the book's real ToC/chapter sizes — a well-tuned agent lands nearer the best
 > case; the context-dump cost, by contrast, recurs on **every** turn. (2) The tool
-> needs explicit `Chapter N` / `Capítulo N` headings to segment a book; titles-only
-> or roman-numeral books (and EPUBs extracted without `ebooklib`) won't segment
-> cleanly. book-to-skill wins when you return to the knowledge repeatedly; for a
-> single one-off read, a plain PDF agent is fine.
+> needs recognizable chapter headings to segment a book — it detects Arabic,
+> Roman (`Chapter I` / line-initial `I.`), CJK, Korean (`제N장`), Thai, and
+> several European forms, but a titles-only book (or an EPUB extracted without
+> `ebooklib`) may not segment cleanly. book-to-skill wins when you return to the
+> knowledge repeatedly; for a single one-off read, a plain PDF agent is fine.
 
 ---
 
