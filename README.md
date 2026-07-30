@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <a href="https://trendshift.io/repositories/27038?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-27038" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/27038/daily" alt="virgiliojr94%2Fbook-to-skill | Trendshift (daily, worldwide)" width="250" height="55"/></a>
+  <a href="https://trendshift.io/repositories/27038?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-27038" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/27038" alt="virgiliojr94%2Fbook-to-skill | Trendshift" width="250" height="55"/></a>
   <a href="https://trendshift.io/repositories/27038?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-27038" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/27038/daily?language=Python" alt="virgiliojr94%2Fbook-to-skill | Trendshift (daily, Python)" width="250" height="55"/></a>
 </p>
 
