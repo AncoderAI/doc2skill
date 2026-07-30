@@ -5,9 +5,13 @@ All notable changes to **book-to-skill** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0] - 2026-07-30
 
 ### Added
+- **Korean chapter headings** — `제N장` (and `제N절`/`제N관`/`제N편`, plus the statutory
+  inserted-article `의N` form) are now detected, with the `제` prefix required so the
+  everyday counter `장` (e.g. `사진 10장` = "10 photos") never false-matches. Validated
+  against a ~3,000-statute corpus (precision 0.999 / recall 1.000) (#82).
 - **Thai chapter headings** — `บทที่ N`, `ตอนที่ N` and `ภาคที่ N` are now detected as
   chapter boundaries, with Thai numerals (๐–๙) as well as Arabic digits. Thai-language
   books previously had no heading detection at all and fell back to length-based
@@ -205,6 +209,7 @@ validated on real books.
 - Technical PDFs extracted in text mode may lose heading structure; use technical
   mode (Docling) to preserve tables, code, and headings.
 
+[1.3.0]: https://github.com/virgiliojr94/book-to-skill/releases/tag/v1.3.0
 [1.2.0]: https://github.com/virgiliojr94/book-to-skill/releases/tag/v1.2.0
 [1.1.0]: https://github.com/virgiliojr94/book-to-skill/releases/tag/v1.1.0
 [1.0.0]: https://github.com/virgiliojr94/book-to-skill/releases/tag/v1.0.0
