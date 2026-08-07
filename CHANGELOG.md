@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-08-07
+
 ### Changed
 - **Keyless npm releases** — tag-triggered GitHub Actions publishing now uses npm
   Trusted Publishing with short-lived OIDC credentials instead of a repository
@@ -243,7 +245,8 @@ validated on real books.
 - Technical PDFs extracted in text mode may lose heading structure; use technical
   mode (Docling) to preserve tables, code, and headings.
 
-[Unreleased]: https://github.com/AncoderAI/doc2skill/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/AncoderAI/doc2skill/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/AncoderAI/doc2skill/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/AncoderAI/doc2skill/releases/tag/v1.4.0
 [1.3.0]: https://github.com/virgiliojr94/book-to-skill/releases/tag/v1.3.0
 [1.2.0]: https://github.com/virgiliojr94/book-to-skill/releases/tag/v1.2.0
