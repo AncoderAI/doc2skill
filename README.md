@@ -5,11 +5,12 @@
 <h1 align="center">book-to-skill</h1>
 
 <p align="center">
-  <strong>Turn any technical book, document folder, or collection of sources into a unified agent skill — ready to study, reference, and use while you work in GitHub Copilot CLI, Amp, or Claude Code.</strong>
+  <strong>Turn any technical book, document folder, or collection of sources into a unified agent skill — ready to study, reference, and use while you work in Codex, GitHub Copilot CLI, Amp, or Claude Code.</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/virgiliojr94/book-to-skill/releases"><img src="https://img.shields.io/github/v/release/virgiliojr94/book-to-skill?style=for-the-badge&color=blueviolet" alt="Latest release"></a>
+  <a href="https://www.npmjs.com/package/book-to-skill"><img src="https://img.shields.io/npm/v/book-to-skill?style=for-the-badge&color=cb3837" alt="npm version"></a>
+  <a href="https://github.com/AncoderAI/doc2skill/releases"><img src="https://img.shields.io/github/v/release/AncoderAI/doc2skill?style=for-the-badge&color=blueviolet" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/Agent_Skills-Open_Standard-blueviolet?style=for-the-badge" alt="Agent Skills standard">
   <img src="https://img.shields.io/badge/PDF%20%E2%80%A2%20EPUB%20%E2%80%A2%20DOCX%20%E2%80%A2%20MD%20%E2%80%A2%20HTML%20%E2%80%A2%20RTF%20%E2%80%A2%20MOBI-supported-green?style=for-the-badge" alt="Formats supported">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="MIT License">
@@ -61,13 +62,13 @@ The usual workarounds don't help:
 
 Once installed, you just type `/your-book-slug replication` and the agent reads the right chapter and answers from the actual content. No hallucination. No digging through PDFs. The book becomes part of your workflow.
 
-Works with any host that supports the open [Agent Skills](https://github.com/agentskills/agentskills) standard — GitHub Copilot CLI, Amp, and Claude Code all read the same `SKILL.md` format.
+Works with any host that supports the open [Agent Skills](https://github.com/agentskills/agentskills) standard — Codex, GitHub Copilot CLI, Amp, and Claude Code all read the same `SKILL.md` format.
 
 ---
 
 ## 📦 What it generates
 
-Running `/book-to-skill your-book.pdf` (or a folder, glob, or list of files) creates a full skill in your agent's skills directory (`~/.copilot/skills/<slug>/` for Copilot CLI, `~/.agents/skills/<slug>/` for Amp or cross-agent, `~/.claude/skills/<slug>/` for Claude Code):
+Running `/book-to-skill your-book.pdf` (or a folder, glob, or list of files) creates a full skill in your agent's skills directory (`~/.agents/skills/<slug>/` for Codex, Amp, or cross-agent use, `~/.copilot/skills/<slug>/` for Copilot CLI, `~/.claude/skills/<slug>/` for Claude Code):
 
 | File | Purpose | Size |
 |------|---------|------|
@@ -127,7 +128,7 @@ After the skill is created, use it like any other agent skill:
 /designing-data-intensive-apps "what chapters do you have?"
 ```
 
-In GitHub Copilot CLI you may need to run `/skills reload` after the file is written so the new skill appears in `/skills list`. Claude Code and Amp pick it up on the next session.
+In GitHub Copilot CLI you may need to run `/skills reload` after the file is written so the new skill appears in `/skills list`. Codex detects Skill changes automatically; restart Codex, Claude Code, or Amp if a newly installed Skill does not appear.
 
 ---
 
@@ -347,16 +348,51 @@ book-to-skill is built for a different job: you want to go deep on a specific to
 
 ## 📥 Install
 
-> **Two ways to use it, do not confuse them:**
-> - **As an agent skill** (the `/book-to-skill` command in Claude Code, Copilot CLI, or Amp) → **`git clone` into your skills folder** (below). This is what gives you the slash command and the full convert-a-book flow.
-> - **As a standalone CLI** (just the text extractor) → `pip install book-to-skill`, then `book-to-skill --help`. This does **not** register the agent skill; it only installs the extraction engine. See [the CLI section](#standalone-cli-pip).
+> **Three ways to use it, do not confuse them:**
+> - **Managed Agent Skill install (recommended)** → `npx book-to-skill install`. This installs the complete Skill and supports safe update, doctor, and uninstall commands.
+> - **Manual Agent Skill install** → `git clone` into a skills folder. This also gives you the full `/book-to-skill` flow, but lifecycle management stays with Git.
+> - **Standalone extraction CLI** → `pip install book-to-skill`. This does **not** register the Agent Skill; it installs only the extraction engine.
 
 The skill follows the open [Agent Skills](https://github.com/agentskills/agentskills) standard, so a single install works for any compatible host.
+
+### Managed Agent Skill install (npm)
+
+Install for Codex or another host that scans the cross-agent user directory:
+
+```bash
+npx book-to-skill install
+# installs ~/.agents/skills/book-to-skill
+```
+
+Choose a host or an explicit skills root when needed:
+
+```bash
+npx book-to-skill install --host claude
+npx book-to-skill install --host copilot
+npx book-to-skill install --host amp
+npx book-to-skill install --target /path/to/.agents/skills
+```
+
+The npm package writes a manifest with hashes for the files it owns. Updates refuse
+to overwrite local edits unless `--force` is explicit, and uninstall preserves files
+that were not installed by the package:
+
+```bash
+npx book-to-skill doctor
+npx book-to-skill@latest update
+npx book-to-skill uninstall
+```
+
+Python 3.9 or newer is still required when the Skill runs its local extraction
+engine. Optional document extractors are installed separately as described under
+[Requirements](#-requirements).
+
+### Manual Agent Skill install (Git)
 
 **GitHub Copilot CLI** (personal skill):
 
 ```bash
-git clone https://github.com/virgiliojr94/book-to-skill.git ~/.copilot/skills/book-to-skill
+git clone https://github.com/AncoderAI/doc2skill.git ~/.copilot/skills/book-to-skill
 # then, in a `copilot` session:
 /skills reload
 /skills info book-to-skill
@@ -365,7 +401,7 @@ git clone https://github.com/virgiliojr94/book-to-skill.git ~/.copilot/skills/bo
 Or the cross-agent path that Copilot CLI and Amp both discover:
 
 ```bash
-git clone https://github.com/virgiliojr94/book-to-skill.git ~/.agents/skills/book-to-skill
+git clone https://github.com/AncoderAI/doc2skill.git ~/.agents/skills/book-to-skill
 ```
 
 **Claude Code**:
@@ -373,13 +409,13 @@ git clone https://github.com/virgiliojr94/book-to-skill.git ~/.agents/skills/boo
 Copy this into your Claude Code session:
 
 ```
-Install book-to-skill: https://raw.githubusercontent.com/virgiliojr94/book-to-skill/master/SKILL.md
+Install book-to-skill: https://raw.githubusercontent.com/AncoderAI/doc2skill/master/SKILL.md
 ```
 
 Or manually using standard `git clone` (ensures modular engine files are fetched correctly):
 
 ```bash
-git clone https://github.com/virgiliojr94/book-to-skill.git ~/.claude/skills/book-to-skill
+git clone https://github.com/AncoderAI/doc2skill.git ~/.claude/skills/book-to-skill
 ```
 
 Then in any agent session:

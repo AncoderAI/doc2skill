@@ -5,6 +5,28 @@ All notable changes to **book-to-skill** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-08-07
+
+### Added
+- **npm Agent Skill distribution** — `npx book-to-skill install` installs the
+  complete Skill into the Codex-compatible `~/.agents/skills` root by default,
+  with explicit host mappings for Claude Code, Copilot CLI, and Amp plus custom
+  target directories.
+- **Managed lifecycle commands** — the npm launcher supports `install`, `update`,
+  `doctor`, and `uninstall`. A versioned manifest records file hashes so updates
+  refuse to overwrite locally modified managed files unless `--force` is explicit,
+  while user-managed files are preserved.
+- **npm release gates** — package/Python versions, the publish allowlist, Skill
+  metadata, installer behavior, packed contents, and fresh-consumer installation
+  are validated before publication. A tag-driven GitHub Actions workflow supports
+  `NPM_TOKEN` and npm Trusted Publishing/OIDC.
+
+### Documentation
+- Added npm installation and lifecycle commands while retaining `git clone` as a
+  manual Skill install and `pip install` as the extraction-only CLI path.
+- Added Codex as a first-class host using the open Agent Skills user root at
+  `~/.agents/skills`.
+
 ## [1.3.0] - 2026-07-30
 
 ### Added

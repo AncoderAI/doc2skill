@@ -33,8 +33,8 @@ document into clean text + metadata; the agent turns that into a structured skil
                                    │
                                    ▼
                 <SKILLS_HOME>/<slug>/  ← chosen per host:
+                  ~/.agents/skills/    Codex, Copilot CLI, or Amp (cross-agent)
                   ~/.copilot/skills/   GitHub Copilot CLI
-                  ~/.agents/skills/    Copilot CLI or Amp (cross-agent)
                   ~/.claude/skills/    Claude Code
                   .github|.claude|.agents/skills/  project-local
                   SKILL.md         core frameworks + chapter & topic index (~4K)
@@ -61,6 +61,7 @@ document into clean text + metadata; the agent turns that into a structured skil
 
 | Path | Responsibility |
 |------|----------------|
+| `bin/book-to-skill-skill.js`, `npm/installer.js` | npm lifecycle wrapper; installs the complete Skill into a host root with a hashed managed-file manifest |
 | `scripts/extract.py` | thin entrypoint shim → `book_to_skill.cli` (kept so old invocations keep working) |
 | `book_to_skill/cli.py`, `utils.py` | CLI parsing, multi-source resolution, chapter/ToC detection, runner |
 | `book_to_skill/parsers/` | one module per format (`pdf`, `epub`, `docx`, `html`, `rtf`, `calibre`, `text`) |

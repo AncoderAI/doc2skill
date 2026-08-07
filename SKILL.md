@@ -1,11 +1,12 @@
 ---
 name: book-to-skill
-description: "Converts books and documents (PDF, EPUB, DOCX, HTML, Markdown, plain text, RTF, MOBI/AZW with Calibre) into structured agent skills, extracting frameworks, mental models, principles, techniques, and anti-patterns. Use when the user wants to study a document through GitHub Copilot CLI, Amp, or Claude Code, apply an author's frameworks while working, or build a reusable knowledge base from a file."
+description: "Converts books and documents (PDF, EPUB, DOCX, HTML, Markdown, plain text, RTF, MOBI/AZW with Calibre) into structured agent skills, extracting frameworks, mental models, principles, techniques, and anti-patterns. Use when the user wants to study a document through Codex, GitHub Copilot CLI, Amp, or Claude Code, apply an author's frameworks while working, or build a reusable knowledge base from a file."
 ---
 
 <!--
 Cross-agent notes (informational; ignored by host agents):
-  - Compatible skill roots: GitHub Copilot CLI (~/.copilot/skills, ~/.agents/skills,
+  - Compatible skill roots: Codex (~/.agents/skills, .agents/skills),
+    GitHub Copilot CLI (~/.copilot/skills, ~/.agents/skills,
     .github/skills, .claude/skills, .agents/skills), Amp (.agents/skills,
     ~/.config/agents/skills, ~/.config/amp/skills), Claude Code (~/.claude/skills).
   - `allowed-tools` is intentionally omitted to stay agent-neutral: Copilot CLI uses
@@ -304,6 +305,7 @@ Choose the destination skill root (`SKILLS_HOME`). Probe the user's filesystem f
 
 | Host agent | Personal skill root (probe in order) | Project-local root |
 |---|---|---|
+| **Codex** | `~/.agents/skills` | `.agents/skills` (searched from the current directory to the repository root) |
 | **GitHub Copilot CLI** | `~/.copilot/skills` → `~/.agents/skills` | `.github/skills` → `.claude/skills` → `.agents/skills` |
 | **Amp** | `~/.agents/skills` → `~/.config/agents/skills` → `~/.config/amp/skills` | `.agents/skills` |
 | **Claude Code** | `~/.claude/skills` | `.claude/skills` |
@@ -312,7 +314,7 @@ Selection rules:
 1. If **exactly one** of the host's candidate roots exists on disk, use it without asking.
 2. If **none** exist (fresh machine), ask the user which root to create — present the host-appropriate options and remember the choice for the session. Do not silently pick.
 3. If the user explicitly asked for project-local output, prefer the project-local row.
-4. If you cannot identify the host, ask: "Which agent are you running this in — GitHub Copilot CLI, Amp, or Claude Code?"
+4. If you cannot identify the host, ask: "Which agent are you running this in — Codex, GitHub Copilot CLI, Amp, or Claude Code?"
 
 Set `SKILLS_HOME` to the selected root and check if `$SKILLS_HOME/<skill_name>/` already exists.
 If it does, prompt the user to choose:
@@ -576,6 +578,7 @@ Usage:
   Ask <skill_name> for ch<N>            → dive into a specific chapter
 
 Reload (if your agent doesn't auto-detect new skills):
+  Codex:               restart only if the Skill does not appear automatically
   GitHub Copilot CLI:  /skills reload
   Claude Code:         restart the session
   Amp:                 restart the session

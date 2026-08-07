@@ -1,0 +1,55 @@
+{
+  "name": "book-to-skill",
+  "version": "1.4.0",
+  "description": "Install the book-to-skill Agent Skill for Codex, Claude Code, Copilot CLI, Amp, and other Agent Skills hosts.",
+  "bin": {
+    "book-to-skill-skill": "bin/book-to-skill-skill.js"
+  },
+  "scripts": {
+    "check:npm": "node scripts/check-npm-package.js",
+    "test:npm": "node --test npm/test/*.test.js",
+    "verify:npm": "npm run check:npm && npm run test:npm",
+    "prepack": "npm run verify:npm",
+    "prepublishOnly": "npm run verify:npm"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AncoderAI/doc2skill.git"
+  },
+  "homepage": "https://github.com/AncoderAI/doc2skill#readme",
+  "bugs": {
+    "url": "https://github.com/AncoderAI/doc2skill/issues"
+  },
+  "keywords": [
+    "agent-skills",
+    "book-to-skill",
+    "codex",
+    "claude-code",
+    "copilot-cli",
+    "amp",
+    "pdf",
+    "epub",
+    "knowledge-base"
+  ],
+  "author": "AncoderAI",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "SKILL.md",
+    "README.md",
+    "LICENSE.md",
+    "book_to_skill/*.py",
+    "book_to_skill/parsers/*.py",
+    "scripts/banner.txt",
+    "scripts/extract.py",
+    "scripts/check-npm-package.js",
+    "tools/*.py",
+    "bin/book-to-skill-skill.js",
+    "npm/installer.js"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

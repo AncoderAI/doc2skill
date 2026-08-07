@@ -101,6 +101,26 @@ jobs:
         # out). Cross-agent metadata Claude ignores is reported as WARN only.
         run: python3 tools/validate_skill.py SKILL.md
 
+  npm-package:
+    name: npm package (node${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["18", "20", "22"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - name: Install npm metadata
+        run: npm ci --ignore-scripts
+      - name: Validate npm installer and package metadata
+        run: npm run verify:npm
+      - name: Audit packed file allowlist
+        run: npm pack --dry-run --json
+
   dependency-review:
     name: dependency review (PR)
     # Only runs on PRs: it diffs the base vs head dependency graph and flags any

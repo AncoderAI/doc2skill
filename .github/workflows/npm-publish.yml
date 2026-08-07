@@ -1,0 +1,74 @@
+name: Publish npm package
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: npm-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.14.0"
+          cache: npm
+          registry-url: "https://registry.npmjs.org"
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+
+      - name: Install release tools
+        run: |
+          npm install --global "npm@>=11.5.1 <12"
+          npm ci --ignore-scripts
+          pip install pytest ruff
+
+      - name: Verify tag and package versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_version="$(node -p "require('./package.json').version")"
+          python_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' pyproject.toml)"
+          if [[ "${GITHUB_REF_NAME}" != "v${package_version}" ]]; then
+            echo "tag ${GITHUB_REF_NAME} does not match package.json v${package_version}" >&2
+            exit 1
+          fi
+          if [[ "${python_version}" != "${package_version}" ]]; then
+            echo "pyproject.toml ${python_version} does not match package.json ${package_version}" >&2
+            exit 1
+          fi
+
+      - name: Run release gates
+        run: |
+          npm run verify:npm
+          pytest tests/ -q
+          ruff check --select E9,F --target-version py310 book_to_skill/ scripts/ tests/ tools/
+          python3 tools/validate_skill.py SKILL.md
+          npm pack --dry-run --json
+
+      - name: Ensure version is not already published
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_version="$(node -p "require('./package.json').version")"
+          if npm view "book-to-skill@${package_version}" version >/dev/null 2>&1; then
+            echo "book-to-skill@${package_version} is already published" >&2
+            exit 1
+          fi
+
+      - name: Publish public package
+        run: npm publish --access public --provenance

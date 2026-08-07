@@ -12,7 +12,7 @@ Turn any book or document into a structured, on-demand agent skill — named fra
 
 [Get started](guide.md){ .md-button .md-button--primary }
 [Skill reference](skill-reference.md){ .md-button }
-[GitHub](https://github.com/virgiliojr94/book-to-skill){ .md-button }
+[GitHub](https://github.com/AncoderAI/doc2skill){ .md-button }
 
 ---
 
@@ -45,20 +45,25 @@ Turn any book or document into a structured, on-demand agent skill — named fra
 
     ---
 
-    One `SKILL.md` runs on Claude Code, GitHub Copilot CLI, and Amp through the
+    One `SKILL.md` runs on Codex, Claude Code, GitHub Copilot CLI, and Amp through the
     open Agent Skills standard.
 
 </div>
 
 ## Install
 
-**As an agent skill** (gives you the `/book-to-skill` command in Claude Code, Copilot CLI, Amp):
+**As a managed Agent Skill** (recommended for Codex, Claude Code, Copilot CLI, and Amp):
 
 ```bash
-git clone https://github.com/virgiliojr94/book-to-skill.git ~/.claude/skills/book-to-skill
+npx book-to-skill install                 # Codex / cross-agent default
+npx book-to-skill install --host claude   # Claude Code
 # then, in your agent session:
 /book-to-skill /path/to/book.pdf [skill-name]
 ```
+
+Use `npx book-to-skill doctor`, `npx book-to-skill@latest update`, and
+`npx book-to-skill uninstall` for lifecycle management. For a manual Git install,
+clone the repository into the appropriate host Skill directory.
 
 **As a standalone CLI** (just the text extractor, optional):
 
