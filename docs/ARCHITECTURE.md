@@ -61,7 +61,7 @@ document into clean text + metadata; the agent turns that into a structured skil
 
 | Path | Responsibility |
 |------|----------------|
-| `bin/book-to-skill-skill.js`, `npm/installer.js` | npm lifecycle wrapper; installs the complete Skill into a host root with a hashed managed-file manifest |
+| `bin/book-to-skill-skill.js`, `npm/installer.js` | npm lifecycle wrapper exposed as `book-to-skill` (and the legacy `book-to-skill-skill` alias); installs the complete Skill into a host root with a hashed managed-file manifest |
 | `scripts/extract.py` | thin entrypoint shim → `book_to_skill.cli` (kept so old invocations keep working) |
 | `book_to_skill/cli.py`, `utils.py` | CLI parsing, multi-source resolution, chapter/ToC detection, runner |
 | `book_to_skill/parsers/` | one module per format (`pdf`, `epub`, `docx`, `html`, `rtf`, `calibre`, `text`) |

@@ -55,15 +55,17 @@ Turn any book or document into a structured, on-demand agent skill — named fra
 **As a managed Agent Skill** (recommended for Codex, Claude Code, Copilot CLI, and Amp):
 
 ```bash
-npx book-to-skill install                 # Codex / cross-agent default
-npx book-to-skill install --host claude   # Claude Code
+npm install --global book-to-skill@latest
+book-to-skill install                 # Codex / cross-agent default
+book-to-skill install --host claude   # Claude Code
 # then, in your agent session:
 /book-to-skill /path/to/book.pdf [skill-name]
 ```
 
-Use `npx book-to-skill doctor`, `npx book-to-skill@latest update`, and
-`npx book-to-skill uninstall` for lifecycle management. For a manual Git install,
-clone the repository into the appropriate host Skill directory.
+Use `book-to-skill doctor`, `book-to-skill update`, and
+`book-to-skill uninstall` for lifecycle management. A one-shot
+`npx --yes book-to-skill@latest install` is also supported. For a manual Git
+install, clone the repository into the appropriate host Skill directory.
 
 **As a standalone CLI** (just the text extractor, optional):
 

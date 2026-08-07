@@ -31,11 +31,11 @@ function usage() {
   return `Install the book-to-skill Agent Skill.
 
 Usage:
-  book-to-skill-skill install [--host <host> | --target <skills-root>] [--force]
-  book-to-skill-skill update [--host <host> | --target <skills-root>] [--force]
-  book-to-skill-skill doctor [--host <host> | --target <skills-root>] [--json]
-  book-to-skill-skill uninstall [--host <host> | --target <skills-root>] [--force]
-  book-to-skill-skill version
+  book-to-skill install [--host <host> | --target <skills-root>] [--force]
+  book-to-skill update [--host <host> | --target <skills-root>] [--force]
+  book-to-skill doctor [--host <host> | --target <skills-root>] [--json]
+  book-to-skill uninstall [--host <host> | --target <skills-root>] [--force]
+  book-to-skill version
 
 Hosts:
   codex     ~/.agents/skills (default)
@@ -45,9 +45,10 @@ Hosts:
   copilot   ~/.copilot/skills
 
 Examples:
-  npx book-to-skill install
-  npx book-to-skill install --host claude
-  npx book-to-skill install --target /path/to/.agents/skills
+  npm install --global book-to-skill
+  book-to-skill install
+  book-to-skill install --host claude
+  npx --yes book-to-skill@latest install
 `;
 }
 

@@ -18,6 +18,7 @@ const {
 } = require('../installer');
 
 const packageRoot = path.resolve(__dirname, '..', '..');
+const packageMetadata = require('../../package.json');
 
 function withTempDirectory(callback) {
   const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'book-to-skill-npm-test-'));
@@ -27,6 +28,11 @@ function withTempDirectory(callback) {
     fs.rmSync(tempDirectory, { recursive: true, force: true });
   }
 }
+
+test('package exposes the primary and legacy npm commands', () => {
+  assert.equal(packageMetadata.bin['book-to-skill'], 'bin/book-to-skill-skill.js');
+  assert.equal(packageMetadata.bin['book-to-skill-skill'], 'bin/book-to-skill-skill.js');
+});
 
 test('host paths use the documented skills roots', () => {
   const homeDir = path.join(path.parse(process.cwd()).root, 'test-home');

@@ -349,7 +349,7 @@ book-to-skill is built for a different job: you want to go deep on a specific to
 ## 📥 Install
 
 > **Three ways to use it, do not confuse them:**
-> - **Managed Agent Skill install (recommended)** → `npx book-to-skill install`. This installs the complete Skill and supports safe update, doctor, and uninstall commands.
+> - **Managed Agent Skill install (recommended)** → install the npm package globally and run `book-to-skill install`, or use the one-shot `npx` command. This installs the complete Skill and supports safe update, doctor, and uninstall commands.
 > - **Manual Agent Skill install** → `git clone` into a skills folder. This also gives you the full `/book-to-skill` flow, but lifecycle management stays with Git.
 > - **Standalone extraction CLI** → `pip install book-to-skill`. This does **not** register the Agent Skill; it installs only the extraction engine.
 
@@ -357,20 +357,28 @@ The skill follows the open [Agent Skills](https://github.com/agentskills/agentsk
 
 ### Managed Agent Skill install (npm)
 
-Install for Codex or another host that scans the cross-agent user directory:
+Install the command globally, then install the Skill for Codex or another host
+that scans the cross-agent user directory:
 
 ```bash
-npx book-to-skill install
+npm install --global book-to-skill@latest
+book-to-skill install
 # installs ~/.agents/skills/book-to-skill
 ```
 
 Choose a host or an explicit skills root when needed:
 
 ```bash
-npx book-to-skill install --host claude
-npx book-to-skill install --host copilot
-npx book-to-skill install --host amp
-npx book-to-skill install --target /path/to/.agents/skills
+book-to-skill install --host claude
+book-to-skill install --host copilot
+book-to-skill install --host amp
+book-to-skill install --target /path/to/.agents/skills
+```
+
+For a one-shot install without keeping a global command, use:
+
+```bash
+npx --yes book-to-skill@latest install
 ```
 
 The npm package writes a manifest with hashes for the files it owns. Updates refuse
@@ -378,10 +386,14 @@ to overwrite local edits unless `--force` is explicit, and uninstall preserves f
 that were not installed by the package:
 
 ```bash
-npx book-to-skill doctor
-npx book-to-skill@latest update
-npx book-to-skill uninstall
+book-to-skill doctor
+npm update --global book-to-skill
+book-to-skill update
+book-to-skill uninstall
 ```
+
+The previous `book-to-skill-skill` command remains available as a compatibility
+alias.
 
 Python 3.9 or newer is still required when the Skill runs its local extraction
 engine. Optional document extractors are installed separately as described under

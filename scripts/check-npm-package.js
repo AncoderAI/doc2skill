@@ -20,7 +20,8 @@ function requireCondition(condition, message) {
 
 requireCondition(packageMetadata.name === 'book-to-skill', 'package name must be book-to-skill');
 requireCondition(packageMetadata.license === 'MIT', 'package license must be MIT');
-requireCondition(packageMetadata.bin?.['book-to-skill-skill'] === 'bin/book-to-skill-skill.js', 'npm bin mapping is invalid');
+requireCondition(packageMetadata.bin?.['book-to-skill'] === 'bin/book-to-skill-skill.js', 'primary npm bin mapping is invalid');
+requireCondition(packageMetadata.bin?.['book-to-skill-skill'] === 'bin/book-to-skill-skill.js', 'legacy npm bin mapping is invalid');
 requireCondition(packageMetadata.publishConfig?.access === 'public', 'publishConfig.access must be public');
 requireCondition(packageMetadata.repository?.url === 'git+https://github.com/AncoderAI/doc2skill.git', 'repository URL must match the publishing repository');
 

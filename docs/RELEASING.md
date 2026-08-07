@@ -65,7 +65,7 @@ npm view book-to-skill@X.Y.Z version dist-tags repository dist --json
 release_tmp="$(mktemp -d)"
 npm pack book-to-skill@X.Y.Z --pack-destination "$release_tmp" --json
 npm exec --yes --package="$release_tmp/book-to-skill-X.Y.Z.tgz" -- \
-  book-to-skill-skill version
+  book-to-skill version
 ```
 
 For a complete acceptance check, install that exact tarball into a temporary

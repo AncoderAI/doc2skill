@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-08-07
+
+### Added
+- Added `book-to-skill` as the primary npm executable, so users can run
+  `npm install --global book-to-skill` followed by `book-to-skill install`.
+  The previous `book-to-skill-skill` command remains available for compatibility.
+
+### Documentation
+- Documented both persistent global installation with `npm` and one-shot
+  execution with `npx`, including lifecycle commands for each workflow.
+
 ## [1.4.1] - 2026-08-07
 
 ### Changed
@@ -245,7 +256,8 @@ validated on real books.
 - Technical PDFs extracted in text mode may lose heading structure; use technical
   mode (Docling) to preserve tables, code, and headings.
 
-[Unreleased]: https://github.com/AncoderAI/doc2skill/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/AncoderAI/doc2skill/compare/v1.4.2...HEAD
+[1.4.2]: https://github.com/AncoderAI/doc2skill/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/AncoderAI/doc2skill/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/AncoderAI/doc2skill/releases/tag/v1.4.0
 [1.3.0]: https://github.com/virgiliojr94/book-to-skill/releases/tag/v1.3.0
