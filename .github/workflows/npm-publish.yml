@@ -15,16 +15,18 @@ concurrency:
 
 jobs:
   publish:
+    name: Verify and publish
     runs-on: ubuntu-latest
-    env:
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "22.14.0"
-          cache: npm
+          package-manager-cache: false
           registry-url: "https://registry.npmjs.org"
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
@@ -32,8 +34,8 @@ jobs:
           python-version: "3.12"
 
       - name: Install release tools
-        run: |
-          npm install --global "npm@>=11.5.1 <12"
+        run: | # zizmor: ignore[adhoc-packages] npm 11.19.0 is pinned and required for OIDC publishing.
+          npm install --global npm@11.19.0
           npm ci --ignore-scripts
           pip install pytest ruff
 
@@ -70,5 +72,27 @@ jobs:
             exit 1
           fi
 
+      - name: Select npm dist-tag
+        id: npm-tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_version="$(node -p "require('./package.json').version")"
+          npm_tag="latest"
+          if [[ "${package_version}" == *-* ]]; then
+            prerelease="${package_version#*-}"
+            npm_tag="${prerelease%%.*}"
+          fi
+          if [[ ! "${npm_tag}" =~ ^[a-zA-Z][a-zA-Z0-9._-]*$ ]]; then
+            echo "invalid npm dist-tag derived from ${package_version}: ${npm_tag}" >&2
+            exit 1
+          fi
+          echo "Publishing ${package_version} with npm dist-tag ${npm_tag}"
+          echo "value=${npm_tag}" >> "${GITHUB_OUTPUT}"
+
       - name: Publish public package
-        run: npm publish --access public --provenance
+        # Authentication is supplied by npm Trusted Publishing. The npm CLI
+        # exchanges GitHub's short-lived OIDC token; no NPM_TOKEN is stored.
+        env:
+          NPM_DIST_TAG: ${{ steps.npm-tag.outputs.value }}
+        run: npm publish --access public --tag "${NPM_DIST_TAG}"

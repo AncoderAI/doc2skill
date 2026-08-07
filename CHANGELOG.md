@@ -5,6 +5,18 @@ All notable changes to **book-to-skill** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Keyless npm releases** — tag-triggered GitHub Actions publishing now uses npm
+  Trusted Publishing with short-lived OIDC credentials instead of a repository
+  `NPM_TOKEN`. Stable versions publish to `latest`; prerelease versions derive
+  their dist-tag from the prerelease identifier, such as `beta` or `alpha`.
+
+### Fixed
+- Updated the extraction-complete banner to reference the current
+  `AncoderAI/doc2skill` repository.
+
 ## [1.4.0] - 2026-08-07
 
 ### Added
@@ -231,6 +243,8 @@ validated on real books.
 - Technical PDFs extracted in text mode may lose heading structure; use technical
   mode (Docling) to preserve tables, code, and headings.
 
+[Unreleased]: https://github.com/AncoderAI/doc2skill/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/AncoderAI/doc2skill/releases/tag/v1.4.0
 [1.3.0]: https://github.com/virgiliojr94/book-to-skill/releases/tag/v1.3.0
 [1.2.0]: https://github.com/virgiliojr94/book-to-skill/releases/tag/v1.2.0
 [1.1.0]: https://github.com/virgiliojr94/book-to-skill/releases/tag/v1.1.0

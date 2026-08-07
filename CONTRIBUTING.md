@@ -18,7 +18,7 @@ generation higher-signal, or the docs clearer are all welcome.
 ## Development
 
 ```bash
-git clone https://github.com/virgiliojr94/book-to-skill.git
+git clone https://github.com/AncoderAI/doc2skill.git
 cd book-to-skill
 python3 -m venv .venv && . .venv/bin/activate
 pip install pytest ruff
@@ -45,8 +45,11 @@ python3 tools/validate_skill.py SKILL.md
 ## Releases
 
 Maintainers cut releases with semantic versioning: tag `vX.Y.Z`, move the
-`Unreleased` changelog section under the new version with the date, and publish a
-GitHub Release using those notes.
+`Unreleased` changelog section under the new version with the date, and push the
+release commit before its matching tag. The tag-triggered workflow runs the full
+release gates and publishes the npm package through keyless Trusted Publishing.
+See [docs/RELEASING.md](docs/RELEASING.md) for the one-time npm configuration,
+release commands, and independent registry checks.
 
 ## Reporting bugs / requesting features
 
