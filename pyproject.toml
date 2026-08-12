@@ -63,6 +63,10 @@ select = ["E9", "F"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# tests/pdf2md/* import book_to_skill as a package. Bare `pytest` (console script)
+# does not put the rootdir on sys.path the way `python -m pytest` does, so CI would
+# fail collection while local runs passed. Pin it here so both agree.
+pythonpath = ["."]
 
 [tool.hatch.build.targets.wheel]
 packages = ["book_to_skill"]
