@@ -52,7 +52,7 @@ Examples:
   book-to-skill install --host claude
   npx --yes book-to-skill@latest install
   book-to-skill pdf2md doctor
-  book-to-skill pdf2md benchmark --corpus corpus.json --run-dir run1
+  book-to-skill pdf2md benchmark book.pdf --run-dir run1
 
 pdf2md runs the bundled Python subsystem; it needs Python 3.9+ on PATH
 (override with BOOK_TO_SKILL_PYTHON) and its own extras -- run

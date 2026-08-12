@@ -404,8 +404,14 @@ The offline PDF→Markdown subsystem ships inside the same package, so a single
 ```bash
 book-to-skill pdf2md doctor
 book-to-skill pdf2md convert book.pdf --output out/
-book-to-skill pdf2md benchmark --corpus corpus.json --run-dir run1
+book-to-skill pdf2md benchmark book.pdf other.pdf --run-dir run1
 ```
+
+`benchmark` takes PDFs directly and prints a readable summary — score breakdown,
+block counts, and how each reference extractor did. It samples 6 pages per PDF by
+default (`--sample 0` measures every page) and records the exact selection in
+`<run-dir>/corpus.generated.json`. Pass `--corpus <manifest>` instead when you
+need pinned pages or ground truth, and `--json` for machine-readable output.
 
 Everything after `pdf2md` is passed straight through to the Python CLI, and its
 exit code is propagated. A Python 3.9+ interpreter must be on `PATH`; set

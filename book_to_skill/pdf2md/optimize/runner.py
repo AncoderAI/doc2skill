@@ -59,12 +59,16 @@ def run_optimize(
         for doc in docs:
             pdf = _resolve_pdf(doc, manifest)
             out = run_dir / cand_id / doc["id"]
+            # Honour the corpus page list the way benchmark does; without it a
+            # search over a 154-page scan re-OCRs every page for every candidate.
+            overrides = dict(prof.to_dict())
+            overrides["page_filter"] = doc.get("pages")
             report = convert_pdf(
                 pdf,
                 out,
                 profile=prof.name,
                 strict=False,
-                profile_overrides=prof.to_dict(),
+                profile_overrides=overrides,
             )
             elapsed += float(report.get("elapsed_sec") or 0)
             val = validate_bundle(out)
