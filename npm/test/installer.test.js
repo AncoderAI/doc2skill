@@ -141,7 +141,10 @@ test('pdf2md passes its arguments through to the bundled Python CLI', () => {
     return; // No interpreter on this machine; the passthrough itself is untestable.
   }
 
-  assert.equal(result.status, 0, result.stderr);
+  // doctor exits non-zero when extras are missing, which is the normal state on
+  // a bare CI runner. What this asserts is that the passthrough delivered the
+  // arguments and returned a real report rather than a traceback.
+  assert.equal(result.stderr, '', 'doctor should not fail with a Python traceback');
   const report = JSON.parse(result.stdout.slice(result.stdout.indexOf('{')));
   assert.equal(typeof report.ok, 'boolean');
   assert.ok(report.binaries, 'doctor report should carry a binaries section');

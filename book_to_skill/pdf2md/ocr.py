@@ -7,9 +7,14 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Dict, Optional
+from typing import TYPE_CHECKING, Dict, Optional
 
-from PIL import Image
+# Pillow is only referenced in annotations here (callers pass the image in, and
+# `from __future__ import annotations` keeps these lazy). Importing it eagerly
+# made `pdf2md doctor` — the command whose job is to report missing extras —
+# crash with ModuleNotFoundError on machines that lack them.
+if TYPE_CHECKING:
+    from PIL import Image
 
 
 class OCRError(RuntimeError):
