@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0-beta.1] - 2026-08-12
+
+### Added
+- **pdf2md subsystem** — offline high-fidelity PDF→Markdown (`book-to-skill-pdf2md`) with
+  IR bundle, quality gates, teacher adapters, synthetic benchmark fixtures, and profile
+  optimizer (local auto-commit only; never push). Technical extract prefers pdf2md;
+  Docling remains optional when installed. See `references/pdf-workflow.md`.
+- Optional extras: `pdf2md`, `pdf2md-technical`, `pdf2md-eval`.
+
+### Changed
+- Split verbose Skill sections into `references/` so root `SKILL.md` stays under 500 lines.
+- CI adds a Python 3.12 `pdf2md-unit` job; the base matrix stays dependency-light.
+- npm installer now ships `references/` and nested `book_to_skill/pdf2md/`.
+
 ## [1.4.2] - 2026-08-07
 
 ### Added

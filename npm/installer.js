@@ -13,6 +13,7 @@ const manifestName = '.book-to-skill-install.json';
 const payloadEntries = [
   'SKILL.md',
   'LICENSE.md',
+  'references',
   'book_to_skill',
   'scripts/banner.txt',
   'scripts/extract.py',

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "book-to-skill"
-version = "1.4.2"
+version = "1.5.0-beta.1"
 description = "Convert books and documents into structured, on-demand agent skills."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -12,6 +12,7 @@ license = { text = "MIT" }
 
 [project.scripts]
 book-to-skill = "book_to_skill.cli:main"
+book-to-skill-pdf2md = "book_to_skill.pdf2md.cli:main"
 
 [project.optional-dependencies]
 epub = ["ebooklib", "beautifulsoup4"]
@@ -19,6 +20,24 @@ pdf = ["pypdf", "pdfminer.six"]
 docx = ["python-docx"]
 rtf = ["striprtf"]
 technical = ["docling"]
+pdf2md = [
+    "pypdf",
+    "pdfminer.six",
+    "pypdfium2",
+    "pdfplumber",
+    "Pillow",
+    "pytesseract",
+]
+pdf2md-technical = [
+    "book-to-skill[pdf2md]",
+    "docling",
+]
+pdf2md-eval = [
+    "book-to-skill[pdf2md]",
+    "markitdown",
+    "firecrawl-anydoc",
+    "pytest",
+]
 all = [
     "ebooklib",
     "beautifulsoup4",
@@ -26,7 +45,11 @@ all = [
     "pdfminer.six",
     "python-docx",
     "striprtf",
-    "docling"
+    "docling",
+    "pypdfium2",
+    "pdfplumber",
+    "Pillow",
+    "pytesseract",
 ]
 
 
@@ -40,3 +63,10 @@ select = ["E9", "F"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["book_to_skill"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"references" = "references"
+"book_to_skill/pdf2md/references" = "book_to_skill/pdf2md/references"

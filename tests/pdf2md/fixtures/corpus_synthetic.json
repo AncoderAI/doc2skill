@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0.0",
+  "base_dir": "tests/pdf2md/fixtures/synthetic",
+  "documents": [
+    {
+      "id": "native_text",
+      "path": "native_text.pdf",
+      "profile": "fast",
+      "require_pass": true,
+      "truth": {
+        "text": "Reliability",
+        "tables": [],
+        "figures": 0,
+        "formulas": []
+      }
+    },
+    {
+      "id": "formula_page",
+      "path": "formula_page.pdf",
+      "profile": "fast",
+      "require_pass": true,
+      "truth": {
+        "text": "Failure rate",
+        "formulas": ["lambda"]
+      }
+    },
+    {
+      "id": "watermark_repeat",
+      "path": "watermark_repeat.pdf",
+      "profile": "fast",
+      "require_pass": false,
+      "truth": {
+        "text": "derating"
+      }
+    }
+  ]
+}

@@ -57,7 +57,8 @@ jobs:
       - name: Run release gates
         run: |
           npm run verify:npm
-          pytest tests/ -q
+          # Base suite stays dependency-light; pdf2md synthetic suite is covered in CI pdf2md-unit.
+          pytest tests/ -q --ignore=tests/pdf2md
           ruff check --select E9,F --target-version py310 book_to_skill/ scripts/ tests/ tools/
           python3 tools/validate_skill.py SKILL.md
           npm pack --dry-run --json

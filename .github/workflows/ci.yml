@@ -27,7 +27,24 @@ jobs:
       - name: Install pytest
         run: pip install pytest
       - name: Run test suite
-        run: pytest tests/ -q
+        # Base matrix stays dependency-light; pdf2md synthetic suite is a separate job.
+        run: pytest tests/ -q --ignore=tests/pdf2md
+
+  pdf2md-unit:
+    name: pdf2md-unit (py3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Install pdf2md test deps
+        run: |
+          pip install pytest pypdf pdfminer.six pypdfium2 pdfplumber Pillow pytesseract
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr
+      - name: Run pdf2md unit + synthetic fixtures
+        run: pytest tests/pdf2md/ -q
 
   lint:
     name: lint (ruff)

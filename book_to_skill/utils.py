@@ -410,6 +410,7 @@ def resolve_input_files(paths: list[str]) -> list[Path]:
 def extract_single_file(input_path: Path, extraction_mode: str, install_mode: str) -> dict:
     """Extract text and metadata from a single file path."""
     input_str = str(input_path)
+    pdf_bundle_meta: dict = {}
     
     if not input_path.exists():
         raise ExtractionError(f"File not found: {input_str}")
@@ -483,21 +484,58 @@ def extract_single_file(input_path: Path, extraction_mode: str, install_mode: st
         pages_label = "spine_items"
     elif ext == ".pdf":
         print(f"Extracting PDF: {input_str}")
+        pdf_bundle_meta = {}
+        # Prefer high-fidelity pdf2md bundle when available (technical or auto).
         if extraction_mode == "technical":
-            print("Mode: technical — using Docling (layout-aware)...", end=" ", flush=True)
-            text = extract_with_docling(input_str)
-            if text:
-                method = "docling"
-                print("OK")
-            else:
-                print("not available, falling back to pdftotext")
-                extraction_mode = "text"
-                
+            print("Mode: technical — trying pdf2md high-fidelity bundle...", end=" ", flush=True)
+            try:
+                from book_to_skill.pdf2md.convert import convert_pdf
+
+                bundle_dir = OUTPUT_DIR / "pdf2md" / input_path.stem
+                report = convert_pdf(
+                    input_str,
+                    bundle_dir,
+                    profile="auto",
+                    strict=False,
+                )
+                md_path = bundle_dir / "document.md"
+                if md_path.is_file() and md_path.read_text(encoding="utf-8").strip():
+                    text = md_path.read_text(encoding="utf-8")
+                    method = "pdf2md"
+                    print("OK")
+                    pdf_bundle_meta = {
+                        "pdf_bundle": str(bundle_dir),
+                        "effective_profile": (report.get("config") or {}).get("name", "auto"),
+                        "quality_score": report.get("total_score"),
+                        "warnings": report.get("warnings") or report.get("failures") or [],
+                    }
+                    if report.get("failures"):
+                        print(
+                            f"  [pdf2md] quality failures: {report.get('failures')}",
+                            file=sys.stderr,
+                        )
+                else:
+                    print("empty, falling back")
+                    text = None
+            except Exception as exc:  # noqa: BLE001 — fall back, do not hide
+                print(f"unavailable ({type(exc).__name__}: {exc}), falling back")
+                text = None
+
+            if not text:
+                print("Mode: technical — using Docling (layout-aware)...", end=" ", flush=True)
+                text = extract_with_docling(input_str)
+                if text:
+                    method = "docling"
+                    print("OK")
+                else:
+                    print("not available, falling back to pdftotext")
+                    extraction_mode = "text"
+
         if extraction_mode == "text" or not text:
             print("Mode: text — using pdftotext...")
             print("Trying pdftotext...", end=" ", flush=True)
             text = extract_with_pdftotext(input_str)
-            
+
             if text:
                 method = "pdftotext"
                 print("OK")
@@ -519,13 +557,14 @@ def extract_single_file(input_path: Path, extraction_mode: str, install_mode: st
                         print("FAILED")
                         raise ExtractionError(
                             "Could not extract text from PDF.\n"
-                            "Install one of: poppler-utils (pdftotext), pypdf, or pdfminer.six\n"
+                            "Install one of: pdf2md extras (pypdfium2/pdfplumber/tesseract), "
+                            "poppler-utils (pdftotext), pypdf, or pdfminer.six\n"
+                            "  pip3 install 'book-to-skill[pdf2md]'\n"
                             "  sudo apt install poppler-utils\n"
                             "  pip3 install pypdf\n"
                             "  pip3 install pdfminer.six"
                         )
 
-                        
         pages = count_pages(input_str)
         pages_label = "pages"
     elif ext in TEXT_EXTENSIONS:
@@ -596,6 +635,7 @@ def extract_single_file(input_path: Path, extraction_mode: str, install_mode: st
         "estimated_tokens": tokens,
         "text": text,
         **structure,
+        **pdf_bundle_meta,
     }
 
 
@@ -704,12 +744,22 @@ def main():
                 "words": src["words"],
                 "estimated_tokens": src["estimated_tokens"],
                 "chapters_detected": src["chapters_detected"],
-                "has_toc": src["has_toc"]
+                "has_toc": src["has_toc"],
+                **{
+                    k: src[k]
+                    for k in ("pdf_bundle", "effective_profile", "quality_score", "warnings")
+                    if k in src
+                },
             }
             for src in extracted_sources
         ],
         **consolidated_structure,
     }
+    # Top-level pdf2md fields from the first PDF source that has them (compat).
+    for src in extracted_sources:
+        for k in ("pdf_bundle", "effective_profile", "quality_score", "warnings"):
+            if k in src and k not in metadata:
+                metadata[k] = src[k]
     
     OUTPUT_META.write_text(json.dumps(metadata, indent=2, ensure_ascii=False))
     

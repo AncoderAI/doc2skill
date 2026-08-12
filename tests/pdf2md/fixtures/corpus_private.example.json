@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0.0",
+  "corpus_dir": "/Users/mccree/Desktop/AnCoder/Test/测试文档",
+  "documents": [
+    {
+      "id": "IEC",
+      "filename": "IEC TR 62380_2004.pdf",
+      "profile": "fast",
+      "pages": [1, 2, 10, 20, 48, 96],
+      "require_pass": false,
+      "truth": {
+        "tables": [1, 1, 1],
+        "figures": 1,
+        "formulas": ["pi"]
+      }
+    },
+    {
+      "id": "SIEMENS",
+      "filename": "SIEMENS SN 29500-2010.pdf",
+      "profile": "fast",
+      "pages": [1, 2, 3, 50, 100, 154],
+      "require_pass": false,
+      "truth": {
+        "text": "Siemens"
+      }
+    }
+  ]
+}

@@ -147,7 +147,7 @@ The extractor tries tools in order per format and uses the first available. If n
 | Text-heavy fallback | `pdfminer.six` | `pip3 install pdfminer.six` | ⚡ instant |
 | **Technical (code, tables, formulas)** | **`docling`** | `pip3 install docling` | ~1.5s/page |
 
-> Before extraction begins, the skill asks you whether the book is **technical** or **text-heavy** and picks the right tool automatically. Docling preserves markdown tables and code blocks; pdftotext is faster for prose-only books.
+> Before extraction begins, the skill asks you whether the book is **technical** or **text-heavy** and picks the right tool automatically. Technical PDFs prefer the offline **pdf2md** bundle (Docling when installed; otherwise pypdfium2 + Tesseract + pdfplumber). See `references/pdf-workflow.md`. Text mode uses pdftotext/pypdf for speed.
 
 **EPUB:**
 
@@ -176,7 +176,7 @@ One file · a folder · a glob · a list of paths
      ▼
 Step 1.5 — "Technical or text-heavy book?"
      │
-     ├── technical → Docling  (tables + code blocks as markdown, ~1.5s/page)
+     ├── technical → pdf2md (Docling or local OCR/layout) · see references/pdf-workflow.md
      └── text      → pdftotext → pypdf → pdfminer  (instant)
      │
      ▼
@@ -447,6 +447,7 @@ for that).
 
 ```bash
 pip install "book-to-skill[pdf,epub,docx]"   # engine + optional extractors
+pip install "book-to-skill[pdf2md]"          # high-fidelity PDF→Markdown (offline)
 book-to-skill ~/path/to/book.pdf --mode text  # or: python -m book_to_skill ...
 book-to-skill --check                          # report which extractors are installed
 ```

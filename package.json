@@ -1,6 +1,6 @@
 {
   "name": "book-to-skill",
-  "version": "1.4.2",
+  "version": "1.5.0-beta.1",
   "description": "Install the book-to-skill Agent Skill for Codex, Claude Code, Copilot CLI, Amp, and other Agent Skills hosts.",
   "bin": {
     "book-to-skill": "bin/book-to-skill-skill.js",
@@ -41,8 +41,11 @@
     "SKILL.md",
     "README.md",
     "LICENSE.md",
+    "references/**/*.md",
     "book_to_skill/*.py",
     "book_to_skill/parsers/*.py",
+    "book_to_skill/pdf2md/**/*.py",
+    "book_to_skill/pdf2md/references/**/*.md",
     "scripts/banner.txt",
     "scripts/extract.py",
     "scripts/check-npm-package.js",
