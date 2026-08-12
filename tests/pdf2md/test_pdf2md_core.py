@@ -120,15 +120,35 @@ def test_optimizer_rejects_regression():
         {
             "id": "incumbent",
             "hard_pass": True,
-            "total": 80,
-            "scores": {"text_ocr": 20, "tables": 20, "figures": 15, "formulas": 10, "heading_order": 8, "integrity_offline": 5},
+            "total_normalized_100": 80,
+            "max_possible": 100,
+            "scores": {
+                "text_ocr": 20,
+                "tables": 20,
+                "figures": 15,
+                "formulas": 10,
+                "heading_order": 8,
+                "integrity_offline": 5,
+                "max_possible": 100,
+                "total_normalized_100": 80,
+            },
             "elapsed_sec": 10,
         },
         {
             "id": "worse",
             "hard_pass": True,
-            "total": 70,
-            "scores": {"text_ocr": 10, "tables": 20, "figures": 15, "formulas": 10, "heading_order": 8, "integrity_offline": 5},
+            "total_normalized_100": 70,
+            "max_possible": 100,
+            "scores": {
+                "text_ocr": 10,
+                "tables": 20,
+                "figures": 15,
+                "formulas": 10,
+                "heading_order": 8,
+                "integrity_offline": 5,
+                "max_possible": 100,
+                "total_normalized_100": 70,
+            },
             "elapsed_sec": 5,
         },
     ]
@@ -141,20 +161,271 @@ def test_optimizer_accepts_gain():
         {
             "id": "incumbent",
             "hard_pass": True,
-            "total": 80,
-            "scores": {"text_ocr": 20, "tables": 20, "figures": 15, "formulas": 10, "heading_order": 8, "integrity_offline": 5},
+            "total_normalized_100": 80,
+            "max_possible": 100,
+            "scores": {
+                "text_ocr": 20,
+                "tables": 20,
+                "figures": 15,
+                "formulas": 10,
+                "heading_order": 8,
+                "integrity_offline": 5,
+                "max_possible": 100,
+                "total_normalized_100": 80,
+            },
             "elapsed_sec": 10,
         },
         {
             "id": "better",
             "hard_pass": True,
-            "total": 86,
-            "scores": {"text_ocr": 22, "tables": 21, "figures": 16, "formulas": 11, "heading_order": 9, "integrity_offline": 5},
+            "total_normalized_100": 86,
+            "max_possible": 100,
+            "scores": {
+                "text_ocr": 22,
+                "tables": 21,
+                "figures": 16,
+                "formulas": 11,
+                "heading_order": 9,
+                "integrity_offline": 5,
+                "max_possible": 100,
+                "total_normalized_100": 86,
+            },
             "elapsed_sec": 9,
         },
     ]
     ranked = rank_candidates(results)
     assert ranked["winner"] and ranked["winner"]["id"] == "better"
+
+
+def test_optimizer_rejects_zero_max_possible():
+    results = [
+        {
+            "id": "incumbent",
+            "hard_pass": True,
+            "total_normalized_100": 0,
+            "max_possible": 0,
+            "scores": {"max_possible": 0, "total_normalized_100": 0},
+            "elapsed_sec": 10,
+        },
+        {
+            "id": "cand",
+            "hard_pass": True,
+            "total_normalized_100": 0,
+            "max_possible": 0,
+            "scores": {"max_possible": 0, "total_normalized_100": 0},
+            "elapsed_sec": 5,
+        },
+    ]
+    ranked = rank_candidates(results)
+    assert ranked["winner"] is None
+    assert ranked["reason"] == "no_comparable_truth"
+
+
+def test_score_against_truth_fail_closed_empty(tmp_path):
+    from book_to_skill.pdf2md.eval import score_against_truth
+
+    (tmp_path / "document.md").write_text("<!-- page: 1 -->\nhello\n", encoding="utf-8")
+    (tmp_path / "document.ir.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0.0",
+                "source_sha256": "x",
+                "page_count": 1,
+                "pages": [],
+                "blocks": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "quality-report.json").write_text("{}", encoding="utf-8")
+    scores = score_against_truth(tmp_path, {})
+    assert scores["max_possible"] == 0
+    assert scores["total_raw"] == 0.0
+    assert scores["total_normalized_100"] == 0.0
+    assert set(scores["unscored_dimensions"]) == {
+        "text_ocr",
+        "heading_order",
+        "tables",
+        "figures",
+        "formulas",
+        "integrity_offline",
+    }
+    assert scores["scored_dimensions"] == []
+    assert all(scores[d] is None for d in scores["unscored_dimensions"])
+
+
+def test_score_against_truth_page_aligned(tmp_path):
+    from book_to_skill.pdf2md.eval import score_against_truth
+
+    md = "<!-- page: 1 -->\nalpha\n\n<!-- page: 2 -->\nbeta gamma\n"
+    (tmp_path / "document.md").write_text(md, encoding="utf-8")
+    (tmp_path / "document.ir.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0.0",
+                "source_sha256": "x",
+                "page_count": 2,
+                "pages": [],
+                "blocks": [
+                    {"block_id": "p1-t", "type": "text", "page": 1, "text": "alpha"},
+                    {"block_id": "p2-t", "type": "text", "page": 2, "text": "beta gamma"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "quality-report.json").write_text("{}", encoding="utf-8")
+    truth = {
+        "pages_total": 96,
+        "pages": {
+            "1": {
+                "page": 1,
+                "text": "alpha",
+                "blocks": [{"type": "text", "order": 0, "bbox": [0, 0, 10, 10]}],
+                "tables": [],
+                "figures": [],
+                "formulas": [],
+                "provenance": {
+                    "text": {"level": "silver", "method": "test", "agreement": 1.0},
+                    "tables": {"level": "silver", "method": "test", "agreement": 1.0},
+                    "figures": {"level": "silver", "method": "test", "agreement": 1.0},
+                    "formulas": {"level": "silver", "method": "test", "agreement": 1.0},
+                },
+            }
+        },
+    }
+    scores = score_against_truth(tmp_path, truth)
+    assert scores["truth_coverage"]["pages_annotated"] == 1
+    assert scores["truth_coverage"]["pages_total"] == 96
+    assert scores["text_ocr"] == 25.0
+    assert scores["heading_order"] == 10.0
+    assert "integrity_offline" in scores["unscored_dimensions"]
+    assert scores["max_possible"] > 0
+    assert scores["total_normalized_100"] == round(
+        100.0 * scores["total_raw"] / scores["max_possible"], 2
+    )
+
+
+def test_score_against_truth_disputed_excluded(tmp_path):
+    """disputed fields are unscored (same as null for denominator)."""
+    from book_to_skill.pdf2md.eval import score_against_truth
+
+    (tmp_path / "document.md").write_text("<!-- page: 1 -->\nalpha\n", encoding="utf-8")
+    (tmp_path / "document.ir.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0.0",
+                "source_sha256": "x",
+                "page_count": 1,
+                "pages": [],
+                "blocks": [{"block_id": "p1", "type": "text", "page": 1, "text": "alpha"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "quality-report.json").write_text("{}", encoding="utf-8")
+    truth = {
+        "pages_total": 10,
+        "pages": {
+            "1": {
+                "page": 1,
+                "text": "alpha",
+                "blocks": [{"type": "text", "order": 0, "bbox": None}],
+                "tables": [],
+                "figures": [],
+                "formulas": [],
+                "provenance": {
+                    "text": {
+                        "level": "disputed",
+                        "method": "t",
+                        "agreement": 0.5,
+                        "cer": 0.5,
+                    },
+                    "tables": {"level": "silver", "method": "t", "agreement": 1.0},
+                    "figures": {"level": "silver", "method": "t", "agreement": 1.0},
+                    "formulas": {"level": "silver", "method": "t", "agreement": 1.0},
+                },
+            }
+        },
+    }
+    scores = score_against_truth(tmp_path, truth)
+    assert scores["text_ocr"] is None
+    assert "text_ocr" in scores["unscored_dimensions"]
+    assert scores["truth_coverage"]["disputed_fields"] == 1
+    assert scores["truth_coverage"]["scorable_by_field"]["text"] == 0
+    assert scores["tables"] == 25.0
+
+
+def test_agreement_clamp_nonnegative():
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path("runs/p4/scripts").resolve()))
+    from p4_lib import agreement_from_cer, level_from_agreement
+
+    agr, c = agreement_from_cer(1.45)
+    assert c == 1.45
+    assert agr == 0.0
+    assert level_from_agreement(agr) == "disputed"
+    agr2, _ = agreement_from_cer(0.02)
+    assert agr2 == 0.98
+    assert level_from_agreement(agr2) == "silver"
+
+
+def test_f1_false_positive_on_blank_annotation(tmp_path):
+    """Annotated figures=[] but candidate emits a figure → precision 0 → figures score 0."""
+    from book_to_skill.pdf2md.eval import match_f1_iou, score_against_truth
+
+    assert match_f1_iou([], [{"bbox": [0, 0, 10, 10]}]) == 0.0
+    assert match_f1_iou([], []) == 1.0
+
+    (tmp_path / "document.md").write_text("<!-- page: 14 -->\n\n", encoding="utf-8")
+    (tmp_path / "document.ir.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0.0",
+                "source_sha256": "x",
+                "page_count": 1,
+                "pages": [],
+                "blocks": [
+                    {
+                        "block_id": "p14-fig",
+                        "type": "figure",
+                        "page": 14,
+                        "bbox": [0, 0, 100, 100],
+                        "figure": {"asset_path": "assets/figures/page-0014-full.png"},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "quality-report.json").write_text("{}", encoding="utf-8")
+    truth = {
+        "pages_total": 154,
+        "pages": {
+            "14": {
+                "page": 14,
+                "text": "",
+                "blocks": [],
+                "tables": [],
+                "figures": [],
+                "formulas": [],
+                "provenance": {
+                    "text": {"level": "silver", "method": "blank", "agreement": 1.0},
+                    "tables": {"level": "silver", "method": "blank", "agreement": 1.0},
+                    "figures": {"level": "silver", "method": "blank", "agreement": 1.0},
+                    "formulas": {"level": "silver", "method": "blank", "agreement": 1.0},
+                },
+            }
+        },
+    }
+    scores = score_against_truth(tmp_path, truth)
+    assert scores["figures"] == 0.0
+    assert scores["heading_order"] == 0.0  # blocks=[] but hyp has a figure block
+    assert scores["text_ocr"] == 25.0  # empty/empty CER
+    assert scores["tables"] == 25.0  # empty/empty F1=1
+    assert scores["formulas"] == 15.0
 
 
 def test_generate_candidates_budget():

@@ -75,18 +75,20 @@ def run_optimize(
             if not val["ok"] or not report.get("passed", False):
                 if doc.get("require_pass", True):
                     hard_pass = False
-            truth = doc.get("truth", {})
-            scores_acc.append(
-                score_against_truth(out, truth) if truth else report.get("scores", {})
-            )
-        agg = _avg_scores(scores_acc)
+            truth = doc.get("truth") or {}
+            # Always fail-closed via score_against_truth; never rank on heuristic_scores.
+            scores_acc.append(score_against_truth(out, truth))
+        agg = _avg_truth_scores(scores_acc)
         results.append(
             {
                 "id": cand_id,
                 "profile": prof.to_dict(),
                 "hard_pass": hard_pass,
                 "scores": agg,
-                "total": agg.get("total", 0),
+                "total_normalized_100": agg.get("total_normalized_100", 0.0),
+                "max_possible": agg.get("max_possible", 0),
+                "total_raw": agg.get("total_raw", 0.0),
+                "total": agg.get("total_normalized_100", 0.0),
                 "elapsed_sec": elapsed,
                 "peak_memory_mb": None,
             }
@@ -138,14 +140,53 @@ def run_optimize(
     return summary
 
 
-def _avg_scores(items: List[Dict[str, float]]) -> Dict[str, float]:
+def _avg_truth_scores(items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Aggregate per-doc truth scores. Null dims stay null if any doc lacks them."""
     if not items:
-        return {"total": 0.0}
-    keys = set().union(*[i.keys() for i in items])
-    out = {}
-    for k in keys:
-        vals = [float(i.get(k, 0)) for i in items]
-        out[k] = round(sum(vals) / len(vals), 2)
+        return {
+            "max_possible": 0,
+            "total_raw": 0.0,
+            "total_normalized_100": 0.0,
+            "total": 0.0,
+            "scored_dimensions": [],
+            "unscored_dimensions": [],
+        }
+    dims = (
+        "text_ocr",
+        "heading_order",
+        "tables",
+        "figures",
+        "formulas",
+        "integrity_offline",
+    )
+    out: Dict[str, Any] = {}
+    for dim in dims:
+        vals = [i.get(dim) for i in items]
+        if any(v is None for v in vals):
+            out[dim] = None
+        else:
+            out[dim] = round(sum(float(v) for v in vals) / len(vals), 2)
+    scored = [d for d in dims if out[d] is not None]
+    unscored = [d for d in dims if out[d] is None]
+    total_raw = round(sum(float(out[d]) for d in scored), 2)
+    # max_possible: average of per-doc max_possible (same dims → same value)
+    max_possible = int(
+        round(sum(int(i.get("max_possible") or 0) for i in items) / len(items))
+    )
+    if max_possible == 0:
+        total_norm = 0.0
+    else:
+        total_norm = round(100.0 * total_raw / max_possible, 2)
+    out.update(
+        {
+            "scored_dimensions": scored,
+            "unscored_dimensions": unscored,
+            "max_possible": max_possible,
+            "total_raw": total_raw,
+            "total_normalized_100": total_norm,
+            "total": total_norm,
+        }
+    )
     return out
 
 

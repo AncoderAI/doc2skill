@@ -77,7 +77,8 @@ def build_quality_report(
         if b.type == BlockType.FORMULA and b.formula and b.formula.failed
     )
 
-    scores = _score_dimensions(ir, md_text, hard_gates)
+    scores = heuristic_scores(ir, md_text, hard_gates)
+    scores["kind"] = "heuristic_no_truth"
     failures: List[str] = []
     if not hard_gates["pages_aligned"]:
         failures.append("pages_not_aligned")
@@ -96,8 +97,10 @@ def build_quality_report(
 
     report = {
         "schema_version": "1.0.0",
+        # Diagnostic only — never the source of total_score / ranking.
+        "heuristic_scores": scores,
         "scores": scores,
-        "total_score": scores.get("total", 0.0),
+        "total_score": None,
         "hard_gates": hard_gates,
         "missing": missing,
         "counts": {
@@ -123,8 +126,11 @@ def build_quality_report(
     return report
 
 
-def _score_dimensions(ir: DocumentIR, md_text: str, gates: Dict[str, Any]) -> Dict[str, float]:
-    # Heuristic offline scores when no ground truth is present (benchmark overlays later).
+def heuristic_scores(ir: DocumentIR, md_text: str, gates: Dict[str, Any]) -> Dict[str, Any]:
+    """Diagnostic offline scores when no gold/silver truth is present.
+
+    Must not be used as ``total_score`` or for optimizer ranking.
+    """
     text_score = 25.0 * min(1.0, gates.get("nonempty_page_ratio", 0) / 0.98)
     if not gates.get("repeated_line_ratio_ok", False):
         text_score *= 0.3

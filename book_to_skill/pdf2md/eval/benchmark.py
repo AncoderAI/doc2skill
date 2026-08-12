@@ -29,7 +29,7 @@ def run_benchmark(corpus_manifest: Path, run_dir: Path) -> Dict[str, Any]:
     for doc in docs:
         doc_id = doc["id"]
         pdf = _resolve_pdf(doc, manifest)
-        truth = doc.get("truth", {})
+        truth = doc.get("truth") or {}
         doc_out = run_dir / doc_id
         doc_out.mkdir(parents=True, exist_ok=True)
 
@@ -43,7 +43,8 @@ def run_benchmark(corpus_manifest: Path, run_dir: Path) -> Dict[str, Any]:
             profile_overrides={"page_filter": doc.get("pages")},
         )
         validation = validate_bundle(bundle)
-        scores = score_against_truth(bundle, truth) if truth else report.get("scores", {})
+        # Fail-closed: empty truth → max_possible=0; never fall back to heuristic_scores.
+        scores = score_against_truth(bundle, truth)
         results["documents"][doc_id] = {
             "pdf": str(pdf),
             "quality": report,
