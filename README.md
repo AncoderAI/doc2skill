@@ -395,6 +395,23 @@ book-to-skill uninstall
 The previous `book-to-skill-skill` command remains available as a compatibility
 alias.
 
+#### Running pdf2md from the npm command
+
+The offline PDF→Markdown subsystem ships inside the same package, so a single
+`npm install` is enough — there is no second install step and nothing to put on
+`PYTHONPATH`:
+
+```bash
+book-to-skill pdf2md doctor
+book-to-skill pdf2md convert book.pdf --output out/
+book-to-skill pdf2md benchmark --corpus corpus.json --run-dir run1
+```
+
+Everything after `pdf2md` is passed straight through to the Python CLI, and its
+exit code is propagated. A Python 3.9+ interpreter must be on `PATH`; set
+`BOOK_TO_SKILL_PYTHON` to point at a specific one. `pdf2md doctor` reports which
+optional Python extras are still missing.
+
 Python 3.9 or newer is still required when the Skill runs its local extraction
 engine. Optional document extractors are installed separately as described under
 [Requirements](#-requirements).

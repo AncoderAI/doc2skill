@@ -36,6 +36,7 @@ Usage:
   book-to-skill update [--host <host> | --target <skills-root>] [--force]
   book-to-skill doctor [--host <host> | --target <skills-root>] [--json]
   book-to-skill uninstall [--host <host> | --target <skills-root>] [--force]
+  book-to-skill pdf2md <doctor|convert|benchmark|optimize> [...]
   book-to-skill version
 
 Hosts:
@@ -50,6 +51,12 @@ Examples:
   book-to-skill install
   book-to-skill install --host claude
   npx --yes book-to-skill@latest install
+  book-to-skill pdf2md doctor
+  book-to-skill pdf2md benchmark --corpus corpus.json --run-dir run1
+
+pdf2md runs the bundled Python subsystem; it needs Python 3.9+ on PATH
+(override with BOOK_TO_SKILL_PYTHON) and its own extras -- run
+\`book-to-skill pdf2md doctor\` to see what is missing.
 `;
 }
 
@@ -473,6 +480,45 @@ function detectPython() {
   return null;
 }
 
+// pdf2md ships as Python inside this npm package. Resolve an interpreter new
+// enough to import it (the package targets 3.9+) so callers never have to know
+// where the module lives.
+function resolvePythonExecutable() {
+  const override = process.env.BOOK_TO_SKILL_PYTHON;
+  const candidates = override ? [override] : ['python3', 'python'];
+  for (const executable of candidates) {
+    const result = spawnSync(
+      executable,
+      ['-c', 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)'],
+      { stdio: 'ignore' },
+    );
+    if (!result.error && result.status === 0) {
+      return executable;
+    }
+  }
+  const tried = candidates.join(', ');
+  throw new Error(
+    `no Python 3.9+ interpreter found (tried: ${tried}). ` +
+      'Install Python 3.9 or newer, or set BOOK_TO_SKILL_PYTHON to its path.',
+  );
+}
+
+function runPdf2md(argv) {
+  const executable = resolvePythonExecutable();
+  const pythonPath = [packageRoot, process.env.PYTHONPATH]
+    .filter(Boolean)
+    .join(path.delimiter);
+  const result = spawnSync(executable, ['-m', 'book_to_skill.pdf2md', ...argv], {
+    stdio: 'inherit',
+    env: { ...process.env, PYTHONPATH: pythonPath },
+  });
+  if (result.error) {
+    throw result.error;
+  }
+  // Killed by signal reports status null; surface that as a generic failure.
+  return result.status === null ? 1 : result.status;
+}
+
 function doctorSkill(options = {}) {
   const skillsRoot = resolveSkillsRoot(options);
   const skillDir = path.join(skillsRoot, skillName);
@@ -555,6 +601,12 @@ function printResult(result, json) {
 }
 
 function runCli(argv) {
+  // Passthrough: everything after `pdf2md` belongs to the Python CLI, so it
+  // must bypass parseArgs (which rejects flags it does not know).
+  if (argv[0] === 'pdf2md') {
+    return runPdf2md(argv.slice(1));
+  }
+
   const options = parseArgs(argv);
   if (options.command === 'help') {
     console.log(usage());
@@ -588,8 +640,10 @@ module.exports = {
   manifestName,
   parseArgs,
   payloadFiles,
+  resolvePythonExecutable,
   resolveSkillsRoot,
   runCli,
+  runPdf2md,
   uninstallSkill,
   updateSkill,
   usage,

@@ -129,3 +129,42 @@ test('tampered manifests cannot address files outside the skill directory', () =
     assert.equal(fs.readFileSync(outsideFile, 'utf8'), 'do not remove\n');
   });
 });
+
+test('pdf2md passes its arguments through to the bundled Python CLI', () => {
+  const result = spawnSync(
+    process.execPath,
+    [path.join(packageRoot, 'bin', 'book-to-skill-skill.js'), 'pdf2md', 'doctor', '--json'],
+    { cwd: os.tmpdir(), encoding: 'utf8' },
+  );
+
+  if (result.status !== 0 && /no Python 3\.9\+ interpreter found/.test(result.stderr)) {
+    return; // No interpreter on this machine; the passthrough itself is untestable.
+  }
+
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(result.stdout.slice(result.stdout.indexOf('{')));
+  assert.equal(typeof report.ok, 'boolean');
+  assert.ok(report.binaries, 'doctor report should carry a binaries section');
+});
+
+test('pdf2md reports a usable error when no interpreter can be found', () => {
+  const result = spawnSync(
+    process.execPath,
+    [path.join(packageRoot, 'bin', 'book-to-skill-skill.js'), 'pdf2md', 'doctor'],
+    { cwd: os.tmpdir(), encoding: 'utf8', env: { ...process.env, BOOK_TO_SKILL_PYTHON: '/nonexistent/python' } },
+  );
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /no Python 3\.9\+ interpreter found/);
+  assert.match(result.stderr, /BOOK_TO_SKILL_PYTHON/);
+});
+
+test('pdf2md propagates the Python CLI exit code', () => {
+  const result = spawnSync(
+    process.execPath,
+    [path.join(packageRoot, 'bin', 'book-to-skill-skill.js'), 'pdf2md', 'benchmark', '--corpus', 'no-such-corpus.json', '--run-dir', 'unused'],
+    { cwd: os.tmpdir(), encoding: 'utf8' },
+  );
+
+  assert.notEqual(result.status, 0);
+});
