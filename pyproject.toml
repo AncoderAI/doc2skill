@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "book-to-skill"
-version = "1.5.0-beta.4"
+version = "1.5.0-beta.5"
 description = "Convert books and documents into structured, on-demand agent skills."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -37,6 +37,12 @@ pdf2md-eval = [
     "markitdown",
     "firecrawl-anydoc",
     "pytest",
+]
+# Optional CV table path for scanned / borderless pages (not a hard dependency).
+pdf2md-scan-tables = [
+    "book-to-skill[pdf2md]",
+    "img2table",
+    "opencv-python-headless",
 ]
 all = [
     "ebooklib",

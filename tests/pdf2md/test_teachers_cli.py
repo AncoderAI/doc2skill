@@ -39,6 +39,48 @@ def test_cli_doctor_json():
     data = json.loads(proc.stdout)
     assert "net_guard" in data
     assert "packages" in data
+    assert data["packages"]["img2table"].get("optional") is True
+    assert "installed" in data["packages"]["img2table"]
+    assert data["packages"]["opencv-python-headless"].get("optional") is True
+    assert "installed" in data["packages"]["opencv-python-headless"]
+    # Missing optional CV stack must not fail doctor; only hint.
+    if (
+        not data["packages"]["img2table"]["installed"]
+        or not data["packages"]["opencv-python-headless"]["installed"]
+    ):
+        assert any("optional_img2table_missing" in h for h in data.get("hints") or [])
+        assert "optional_img2table_missing" not in (data.get("issues") or [])
+
+
+def test_doctor_optional_img2table_hint_does_not_fail(monkeypatch):
+    from book_to_skill.pdf2md import doctor as doctor_mod
+
+    real_pkg = doctor_mod._pkg
+
+    def fake_pkg(name: str):
+        if name in {"img2table", "opencv-python-headless", "opencv-python"}:
+            return {"installed": False, "version": None}
+        return real_pkg(name)
+
+    monkeypatch.setattr(doctor_mod, "_pkg", fake_pkg)
+    monkeypatch.setattr(
+        doctor_mod,
+        "_optional_opencv",
+        lambda: {
+            "installed": False,
+            "version": None,
+            "optional": True,
+            "import_name": "cv2",
+            "dist": "opencv-python-headless",
+        },
+    )
+    report = doctor_mod.run_doctor()
+    assert report["packages"]["img2table"]["optional"] is True
+    assert report["packages"]["img2table"]["installed"] is False
+    assert any("optional_img2table_missing" in h for h in report["hints"])
+    assert "optional_img2table_missing" not in report["issues"]
+    # Doctor ok may still be False for unrelated hard issues; optional must not add one.
+    assert not any("img2table" in i for i in report["issues"])
 
 
 def test_cli_convert_native(tmp_path):

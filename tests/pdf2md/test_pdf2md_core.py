@@ -116,6 +116,10 @@ def test_cer_wer_kendall():
 
 
 def test_optimizer_rejects_regression():
+    cov = {
+        "scored_dimensions": ["text_ocr", "tables", "figures", "formulas", "heading_order"],
+        "truth_coverage": {"pages_annotated": 12},
+    }
     results = [
         {
             "id": "incumbent",
@@ -131,6 +135,7 @@ def test_optimizer_rejects_regression():
                 "integrity_offline": 5,
                 "max_possible": 100,
                 "total_normalized_100": 80,
+                **cov,
             },
             "elapsed_sec": 10,
         },
@@ -148,6 +153,7 @@ def test_optimizer_rejects_regression():
                 "integrity_offline": 5,
                 "max_possible": 100,
                 "total_normalized_100": 70,
+                **cov,
             },
             "elapsed_sec": 5,
         },
@@ -157,6 +163,10 @@ def test_optimizer_rejects_regression():
 
 
 def test_optimizer_accepts_gain():
+    cov = {
+        "scored_dimensions": ["text_ocr", "tables", "figures", "formulas", "heading_order"],
+        "truth_coverage": {"pages_annotated": 12},
+    }
     results = [
         {
             "id": "incumbent",
@@ -172,6 +182,7 @@ def test_optimizer_accepts_gain():
                 "integrity_offline": 5,
                 "max_possible": 100,
                 "total_normalized_100": 80,
+                **cov,
             },
             "elapsed_sec": 10,
         },
@@ -189,12 +200,51 @@ def test_optimizer_accepts_gain():
                 "integrity_offline": 5,
                 "max_possible": 100,
                 "total_normalized_100": 86,
+                **cov,
             },
             "elapsed_sec": 9,
         },
     ]
     ranked = rank_candidates(results)
     assert ranked["winner"] and ranked["winner"]["id"] == "better"
+
+
+def test_optimizer_rejects_insufficient_truth_coverage():
+    results = [
+        {
+            "id": "incumbent",
+            "hard_pass": True,
+            "total_normalized_100": 50,
+            "max_possible": 45,
+            "scores": {
+                "tables": 0.0,
+                "figures": 0.0,
+                "scored_dimensions": ["tables", "figures"],
+                "truth_coverage": {"pages_annotated": 6},
+                "max_possible": 45,
+                "total_normalized_100": 50,
+            },
+            "elapsed_sec": 1,
+        },
+        {
+            "id": "cand",
+            "hard_pass": True,
+            "total_normalized_100": 80,
+            "max_possible": 45,
+            "scores": {
+                "tables": 12.5,
+                "figures": 0.0,
+                "scored_dimensions": ["tables", "figures"],
+                "truth_coverage": {"pages_annotated": 6},
+                "max_possible": 45,
+                "total_normalized_100": 80,
+            },
+            "elapsed_sec": 1,
+        },
+    ]
+    ranked = rank_candidates(results)
+    assert ranked["winner"] is None
+    assert ranked["reason"] == "insufficient_truth_coverage"
 
 
 def test_optimizer_rejects_zero_max_possible():
@@ -353,7 +403,8 @@ def test_score_against_truth_disputed_excluded(tmp_path):
     assert "text_ocr" in scores["unscored_dimensions"]
     assert scores["truth_coverage"]["disputed_fields"] == 1
     assert scores["truth_coverage"]["scorable_by_field"]["text"] == 0
-    assert scores["tables"] == 25.0
+    assert scores["tables"] is None
+    assert "tables" in scores["unscored_dimensions"]
 
 
 def test_agreement_clamp_nonnegative():
@@ -373,11 +424,14 @@ def test_agreement_clamp_nonnegative():
 
 
 def test_f1_false_positive_on_blank_annotation(tmp_path):
-    """Annotated figures=[] but candidate emits a figure → precision 0 → figures score 0."""
+    """Annotated figures=[] but candidate emits a figure → precision 0 → figures score 0.
+
+    Empty ∩ empty for tables/formulas → unscored (null), not a free full mark.
+    """
     from book_to_skill.pdf2md.eval import match_f1_iou, score_against_truth
 
     assert match_f1_iou([], [{"bbox": [0, 0, 10, 10]}]) == 0.0
-    assert match_f1_iou([], []) == 1.0
+    assert match_f1_iou([], []) is None
 
     (tmp_path / "document.md").write_text("<!-- page: 14 -->\n\n", encoding="utf-8")
     (tmp_path / "document.ir.json").write_text(
@@ -424,8 +478,58 @@ def test_f1_false_positive_on_blank_annotation(tmp_path):
     assert scores["figures"] == 0.0
     assert scores["heading_order"] == 0.0  # blocks=[] but hyp has a figure block
     assert scores["text_ocr"] == 25.0  # empty/empty CER
-    assert scores["tables"] == 25.0  # empty/empty F1=1
-    assert scores["formulas"] == 15.0
+    assert scores["tables"] is None  # empty ∩ empty → unscored
+    assert scores["formulas"] is None
+    assert "tables" in scores["unscored_dimensions"]
+    assert "formulas" in scores["unscored_dimensions"]
+
+
+def test_empty_empty_dimension_unscored(tmp_path):
+    """ref=[] and hyp=[] must not grant full marks (frozen-constant trap)."""
+    from book_to_skill.pdf2md.eval import score_against_truth
+
+    (tmp_path / "document.md").write_text("<!-- page: 1 -->\nalpha\n", encoding="utf-8")
+    (tmp_path / "document.ir.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0.0",
+                "source_sha256": "x",
+                "page_count": 1,
+                "pages": [],
+                "blocks": [{"block_id": "p1", "type": "text", "page": 1, "text": "alpha"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "quality-report.json").write_text("{}", encoding="utf-8")
+    truth = {
+        "pages_total": 10,
+        "pages": {
+            "1": {
+                "page": 1,
+                "text": "alpha",
+                "blocks": [{"type": "text", "order": 0, "bbox": [0, 0, 1, 1]}],
+                "tables": [],
+                "figures": [],
+                "formulas": [],
+                "provenance": {
+                    "text": {"level": "silver", "method": "t", "agreement": 1.0},
+                    "tables": {"level": "silver", "method": "t", "agreement": 1.0},
+                    "figures": {"level": "silver", "method": "t", "agreement": 1.0},
+                    "formulas": {"level": "silver", "method": "t", "agreement": 1.0},
+                },
+            }
+        },
+    }
+    scores = score_against_truth(tmp_path, truth)
+    assert scores["figures"] is None
+    assert scores["formulas"] is None
+    assert scores["tables"] is None
+    assert scores["text_ocr"] == 25.0
+    assert scores["max_possible"] == 35  # text 25 + heading 10 only
+    assert "figures" in scores["unscored_dimensions"]
+    assert "formulas" in scores["unscored_dimensions"]
+    assert "tables" in scores["unscored_dimensions"]
 
 
 def test_generate_candidates_budget():
@@ -487,6 +591,150 @@ def test_asset_path_safety(tmp_path):
     assert any("etc/passwd" in b or "https://" in b for b in broken)
 
 
+def test_formula_feature_threshold_conservative():
+    from book_to_skill.pdf2md.figures import score_formula_line
+
+    ok = score_formula_line("λ = λ0 · πT")
+    assert ok.passed and "greek" in ok.classes_hit and "operators" in ok.classes_hit
+    # IEC table-cell law without λ on same line
+    cell = score_formula_line("=0.024×D (1)")
+    assert cell.passed
+    # footnote-like trailing (N) alone must not pass
+    bad = score_formula_line("COB package note (4)")
+    assert not bad.passed
+    plain = score_formula_line("Introduction to reliability")
+    assert not plain.passed
+    # greek without operator (variable label / TOC) must not pass
+    assert not score_formula_line("λ1").passed
+    # OCR garbage with '=' but no greek / mul must not pass
+    assert not score_formula_line("= Ws RAZA O<we<t; R20").passed
+
+
+def test_figure_area_gates_full_page_and_tiny():
+    from book_to_skill.pdf2md.figures import FigureCandidate, apply_area_gates
+
+    full = FigureCandidate(bbox=(0, 0, 595.2, 841.3), route="raster", page=14)
+    apply_area_gates(full, 595.2, 842.0)
+    assert full.dropped == "full_page"
+    tiny = FigureCandidate(bbox=(0, 0, 10, 10), route="raster", page=1)
+    apply_area_gates(tiny, 595.0, 842.0)
+    assert tiny.dropped == "too_small"
+
+
+def test_formula_failed_partial_credit_in_truth_score(tmp_path):
+    """Honest failure with crop+reason gets 0.3 weight; silent empty stays weaker."""
+    from book_to_skill.pdf2md.eval import match_f1_iou_weighted, _formula_hyp_weight
+
+    assert _formula_hyp_weight(
+        {"failed": True, "asset_path": "assets/formulas/x.png", "failure_reason": "no_latex"}
+    ) == 0.3
+    assert _formula_hyp_weight({"failed": True, "asset_path": None, "failure_reason": "x"}) == 0.0
+    assert _formula_hyp_weight({"failed": False, "latex": r"a=b"}) == 1.0
+
+    refs = [{"bbox": [0, 0, 10, 10]}]
+    hyps = [{"bbox": [0, 0, 10, 10]}]
+    f1_ok = match_f1_iou_weighted(refs, hyps, [1.0])
+    f1_partial = match_f1_iou_weighted(refs, hyps, [0.3])
+    assert f1_ok > f1_partial > 0.0
+
+
+def test_white_paper_ocr_condition_removed():
+    """The old len(ocr_text)<80 full-page figure branch must not exist."""
+    import inspect
+    from book_to_skill.pdf2md import convert as convert_mod
+
+    src = inspect.getsource(convert_mod._convert_local)
+    assert "len(ocr_text.strip()) < 80" not in src
+    assert "page-full.png" not in src or "full_page" in src
+
+
+def test_cli_generated_corpus_follows_profile(tmp_path):
+    from book_to_skill.pdf2md.cli import _write_generated_corpus
+
+    pdf = FIXTURES / "native_text.pdf"
+    path = _write_generated_corpus([str(pdf)], tmp_path, sample=0, profile="accurate")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["documents"][0]["profile"] == "accurate"
+
+
+def test_ocr_table_grid_requires_scorable_shape():
+    from book_to_skill.pdf2md.ir import TableBlock, TableCell
+    from book_to_skill.pdf2md.tables import extract_tables_from_ocr_words, is_scorable_table
+
+    shell = {"rows": 0, "cols": 0, "bbox": None, "caption": "Tabelle 1", "cells": None}
+    assert not is_scorable_table(shell)
+    stub = TableBlock(
+        rows=1,
+        cols=1,
+        cells=[TableCell(text="Tabelle 1", row=0, col=0)],
+        bbox=None,
+    )
+    assert not is_scorable_table(stub)
+
+    # Synthetic 3x3 numeric grid of word boxes
+    words = []
+    for r in range(3):
+        for c in range(3):
+            x0, y0 = 10 + c * 40, 100 + r * 12
+            words.append(((x0, y0, x0 + 20, y0 + 8), f"{r}.{c}"))
+    tabs = extract_tables_from_ocr_words(words, page_w=400, page_h=400)
+    assert len(tabs) >= 1
+    assert is_scorable_table(tabs[0])
+    assert tabs[0].rows >= 2 and tabs[0].cols >= 2
+    assert tabs[0].bbox is not None
+
+
+def test_match_f1_no_bbox_cannot_match():
+    """ref or hyp missing bbox → never matched; still counts in P/R denominators."""
+    from book_to_skill.pdf2md.eval import match_f1_iou
+
+    refs = [{"bbox": None}, {"bbox": [0, 0, 10, 10]}]
+    hyps = [{"bbox": None}, {"bbox": [0, 0, 10, 10]}]
+    # Only the bbox pair can match → credit=1, P=1/2, R=1/2 → F1=0.5
+    assert match_f1_iou(refs, hyps) == 0.5
+    # Two no-bbox items alone: no match, F1=0 (not count-matched)
+    assert match_f1_iou([{"bbox": None}], [{"bbox": None}]) == 0.0
+
+
 def test_resolve_profile_overrides():
     p = resolve_profile("fast", {"dpi": 120})
     assert p.dpi == 120 and p.name == "fast"
+
+
+def test_vector_figures_use_pymupdf_not_pdfplumber():
+    import inspect
+    from book_to_skill.pdf2md import figures as fig_mod
+
+    src = inspect.getsource(fig_mod.detect_vector_figures)
+    assert "get_drawings" in src
+    assert "pdfplumber" not in src
+
+
+def test_product_path_has_no_layout_model_imports():
+    """Layout ONNX must stay on silver side (runs/p4/scripts), never product path."""
+    root = Path(__file__).resolve().parents[2] / "book_to_skill" / "pdf2md"
+    banned = ("silver_layout", "PP-DocLayout", "onnxruntime", "alex-dinh")
+    offenders = []
+    for path in root.rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        for token in banned:
+            if token in text:
+                offenders.append(f"{path.name}:{token}")
+    assert offenders == []
+
+
+def test_three_family_empty_vs_layout_formulas_disputed():
+    """A=B=0 and C>0 (layout false formulas) must be disputed, not silver."""
+    import sys
+
+    scripts = Path(__file__).resolve().parents[2] / "runs" / "p4" / "scripts"
+    sys.path.insert(0, str(scripts))
+    from three_family import resolve_three_family
+
+    r = resolve_three_family({"A": 0, "B": 0, "C": 99})
+    assert r["level"] == "disputed"
+    assert "empty_but_C_nonempty" in r["reason"]
+    r2 = resolve_three_family({"A": 0, "B": 0, "C": 0})
+    assert r2["level"] == "silver"
+    r3 = resolve_three_family({"A": None, "B": None, "C": 2})
+    assert r3["level"] == "weak_single_family"

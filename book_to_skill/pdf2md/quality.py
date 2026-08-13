@@ -145,8 +145,19 @@ def heuristic_scores(ir: DocumentIR, md_text: str, gates: Dict[str, Any]) -> Dic
     fig_score = min(20.0, 5.0 + figures * 3.0)
 
     formulas = [b for b in ir.blocks if b.type == BlockType.FORMULA]
-    ok_f = sum(1 for b in formulas if b.formula and not b.formula.failed and b.formula.latex)
-    formula_score = 15.0 * (ok_f / max(len(formulas), 1)) if formulas else 8.0
+    if formulas:
+        weight_sum = 0.0
+        for b in formulas:
+            f = b.formula
+            if f is None:
+                continue
+            if not f.failed and f.latex:
+                weight_sum += 1.0
+            elif f.failed and f.asset_path and f.failure_reason:
+                weight_sum += 0.3
+        formula_score = 15.0 * (weight_sum / len(formulas))
+    else:
+        formula_score = 8.0
 
     integrity = 5.0 if gates.get("pages_aligned") and gates.get("assets_valid") and gates.get("network_blocked") else 1.0
 

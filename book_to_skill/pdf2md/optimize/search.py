@@ -26,6 +26,8 @@ SEARCH_DIMS: List[Dict[str, Any]] = [
     {"max_repeated_line_ratio": 0.20},
     {"enable_formulas": True},
     {"enable_formulas": False},
+    {"enable_ocr_tables": True},
+    {"enable_ocr_tables": False},
     {"html_tables_on_span": True},
 ]
 
@@ -58,6 +60,17 @@ def _comparable_score(result: Dict[str, Any]) -> Optional[float]:
     return None
 
 
+def _truth_coverage_ok(result: Dict[str, Any]) -> bool:
+    """Require enough scored dims + annotated pages before a winner may be named."""
+    scores = result.get("scores") if isinstance(result.get("scores"), dict) else result
+    if not isinstance(scores, dict):
+        return False
+    scored = scores.get("scored_dimensions") or []
+    cov = scores.get("truth_coverage") or {}
+    pages_ann = int(cov.get("pages_annotated") or 0)
+    return len(scored) >= 3 and pages_ann >= 10
+
+
 def rank_candidates(
     results: List[Dict[str, Any]],
     *,
@@ -69,6 +82,8 @@ def rank_candidates(
     """Select winner vs incumbent using total_normalized_100 only.
 
     Candidates with max_possible==0 are not comparable and cannot win.
+    Scoring base with scored_dimensions < 3 or pages_annotated < 10 cannot
+    name a winner (``insufficient_truth_coverage``).
     """
     by_id = {r["id"]: r for r in results}
     if "incumbent" not in by_id:
@@ -81,10 +96,18 @@ def rank_candidates(
             "reason": "no_comparable_truth",
             "top3": [],
         }
+    if not _truth_coverage_ok(inc):
+        return {
+            "winner": None,
+            "reason": "insufficient_truth_coverage",
+            "top3": [],
+        }
 
     survivors = []
     for r in results:
         if not r.get("hard_pass"):
+            continue
+        if not _truth_coverage_ok(r):
             continue
         s = _comparable_score(r)
         if s is None:

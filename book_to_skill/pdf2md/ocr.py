@@ -76,6 +76,85 @@ def ocr_image(
         return proc.stdout or ""
 
 
+def ocr_image_words(
+    image: Image.Image,
+    *,
+    lang: str = "eng",
+    psm: int = 3,
+    dpi: int = 300,
+    page_size_pts: Optional[tuple] = None,
+) -> list:
+    """OCR word boxes as [(bbox_pts, text), ...] in PDF bottom-left coordinates.
+
+    ``page_size_pts`` is ``(width, height)`` in PDF points. Required to map
+    tesseract's top-left pixel boxes into PDF space. Raises OCRError on failure.
+    """
+    if not tesseract_available():
+        raise OCRError("tesseract binary not found")
+    if page_size_pts is None:
+        raise OCRError("page_size_pts required for word box mapping")
+    page_h = float(page_size_pts[1])
+    scale = dpi / 72.0
+    with tempfile.TemporaryDirectory(prefix="pdf2md_ocr_tsv_") as tmp:
+        img_path = Path(tmp) / "page.png"
+        image.save(img_path, format="PNG", dpi=(dpi, dpi))
+        out_base = Path(tmp) / "out"
+        proc = subprocess.run(
+            [
+                "tesseract",
+                str(img_path),
+                str(out_base),
+                "-l",
+                lang,
+                "--psm",
+                str(psm),
+                "tsv",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        tsv_path = Path(str(out_base) + ".tsv")
+        if not tsv_path.is_file():
+            raise OCRError(
+                f"tesseract tsv missing rc={proc.returncode}: {(proc.stderr or '').strip()}"
+            )
+        lines = tsv_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        if not lines:
+            return []
+        header = lines[0].split("\t")
+        idx = {name: i for i, name in enumerate(header)}
+        needed = ("level", "left", "top", "width", "height", "text")
+        if any(n not in idx for n in needed):
+            raise OCRError(f"tesseract tsv missing columns: {header}")
+        words = []
+        for row in lines[1:]:
+            cols = row.split("\t")
+            if len(cols) <= idx["text"]:
+                continue
+            try:
+                level = int(cols[idx["level"]])
+            except ValueError:
+                continue
+            if level != 5:  # word
+                continue
+            text = cols[idx["text"]].strip()
+            if not text:
+                continue
+            left = float(cols[idx["left"]])
+            top = float(cols[idx["top"]])
+            width = float(cols[idx["width"]])
+            height = float(cols[idx["height"]])
+            x0 = left / scale
+            x1 = (left + width) / scale
+            y1 = page_h - (top / scale)
+            y0 = page_h - ((top + height) / scale)
+            if y1 < y0:
+                y0, y1 = y1, y0
+            words.append(((x0, y0, x1, y1), text))
+        return words
+
+
 def osd_image(image: Image.Image, *, dpi: int = 300) -> Dict[str, object]:
     """Run tesseract OSD (--psm 0). Raises OCRError if orientation cannot be read."""
     if not tesseract_available():

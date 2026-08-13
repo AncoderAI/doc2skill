@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ..ir import validate_ir_dict
-from ..tables import parse_html_table, parse_markdown_table
+from ..tables import is_scorable_table, parse_html_table, parse_markdown_table
 
 DIM_MAX: Dict[str, float] = {
     "text_ocr": 25.0,
@@ -102,21 +102,53 @@ def match_f1_iou(
     hyps: Sequence[Dict[str, Any]],
     *,
     iou_thresh: float = 0.5,
-) -> float:
+) -> Optional[float]:
     """Greedy one-to-one F1 with bbox IoU ≥ thresh.
 
     Precision side is first-class: annotated-empty + candidate non-empty
     (false positives, e.g. white-paper full-page figures) → F1 = 0.0.
-    Empty/empty → 1.0.
+
+    Empty ∩ empty → ``None`` (no scoring signal). Callers must treat this as
+    unscored — never as a free 1.0 / full marks (that was a frozen-constant trap).
+    """
+    weights = [1.0] * len(hyps)
+    return match_f1_iou_weighted(refs, hyps, weights, iou_thresh=iou_thresh)
+
+
+def _formula_hyp_weight(formula: Dict[str, Any]) -> float:
+    """Successful latex → 1.0; failed with crop+reason → 0.3; else 0.0."""
+    if not formula:
+        return 0.0
+    if formula.get("failed"):
+        if formula.get("asset_path") and formula.get("failure_reason"):
+            return 0.3
+        return 0.0
+    if formula.get("latex"):
+        return 1.0
+    return 0.0
+
+
+def match_f1_iou_weighted(
+    refs: Sequence[Dict[str, Any]],
+    hyps: Sequence[Dict[str, Any]],
+    hyp_weights: Sequence[float],
+    *,
+    iou_thresh: float = 0.5,
+) -> Optional[float]:
+    """Like match_f1_iou but matched hyp contributes ``hyp_weights[j]`` credit.
+
+    Used so honest formula failures (weight 0.3) beat silent omission (weight 0).
+    Unmatched hyps still count fully in the precision denominator.
+
+    Empty ∩ empty → ``None`` (unscored), not 1.0.
     """
     if not refs and not hyps:
-        return 1.0
+        return None
     if not refs and hyps:
-        # False positives against an explicitly empty silver/gold annotation.
         return 0.0
     if refs and not hyps:
-        # False negatives only → precision undefined/1 but recall 0 → F1 0
         return 0.0
+    weights = list(hyp_weights) + [1.0] * max(0, len(hyps) - len(hyp_weights))
     pairs: List[Tuple[float, int, int]] = []
     for i, ref in enumerate(refs):
         rb = ref.get("bbox")
@@ -132,21 +164,18 @@ def match_f1_iou(
     pairs.sort(reverse=True)
     used_r: set[int] = set()
     used_h: set[int] = set()
-    matched = 0
+    credit = 0.0
     for _, i, j in pairs:
         if i in used_r or j in used_h:
             continue
         used_r.add(i)
         used_h.add(j)
-        matched += 1
-    # Refs/hyps without bbox: fall back to count residual (unmatched)
-    refs_no_bbox = sum(1 for r in refs if not r.get("bbox"))
-    hyps_no_bbox = sum(1 for h in hyps if not h.get("bbox"))
-    # Count-only matching for bbox-less items
-    count_match = min(refs_no_bbox, hyps_no_bbox)
-    matched += count_match
-    precision = matched / len(hyps)
-    recall = matched / len(refs)
+        credit += float(weights[j])
+    # Missing bbox never matches (no spatial coincidence without coordinates).
+    # Unmatched no-bbox hyps still count in the precision denominator; no-bbox
+    # refs still count in the recall denominator.
+    precision = credit / len(hyps)
+    recall = credit / len(refs)
     return f1(precision, recall)
 
 
@@ -267,6 +296,19 @@ def _dim_is_annotated(pages: Dict[int, Dict[str, Any]], dim: str) -> bool:
         "formulas": "formulas",
     }.get(dim)
     if not field:
+        return False
+    if field == "tables":
+        # Caption shells do not create a tables scoring basis.
+        for p in pages.values():
+            if _field_level(p, "tables") is None:
+                continue
+            items = p.get("tables")
+            if items is None:
+                continue
+            if any(is_scorable_table(t) for t in items):
+                return True
+            if items == []:
+                return True
         return False
     return any(_field_level(p, field) is not None for p in pages.values())
 
@@ -409,18 +451,33 @@ def score_against_truth(bundle_dir: Path, truth: Dict[str, Any]) -> Dict[str, An
         for page_no, tp in pages_truth.items():
             if _field_level(tp, field) is None:
                 continue
-            refs.extend(_as_bbox_items(tp.get(field) or []))
+            raw_refs = list(tp.get(field) or [])
+            if field == "tables":
+                # Caption shells / incomplete geometry do not enter the ref pool.
+                # Pages that only have shells contribute no tables signal (skip).
+                scorable_refs = [t for t in raw_refs if is_scorable_table(t)]
+                if raw_refs and not scorable_refs:
+                    continue
+                refs.extend(_as_bbox_items(scorable_refs))
+            else:
+                refs.extend(_as_bbox_items(raw_refs))
             page_hyps = [
                 b
                 for b in _hyp_page_blocks(ir, page_no)
                 if b.get("type") == hyp_type
             ]
             for b in page_hyps:
+                if hyp_type == "table":
+                    t = b.get("table") if isinstance(b.get("table"), dict) else {}
+                    merged = dict(t) if isinstance(t, dict) else {}
+                    merged["bbox"] = b.get("bbox") or merged.get("bbox")
+                    if not is_scorable_table(merged):
+                        continue
+                    hyps.append({"bbox": merged.get("bbox")})
+                    continue
                 bbox = b.get("bbox")
                 if not bbox and hyp_type == "figure" and isinstance(b.get("figure"), dict):
                     bbox = b["figure"].get("bbox")
-                if not bbox and hyp_type == "table" and isinstance(b.get("table"), dict):
-                    bbox = b["table"].get("bbox")
                 if not bbox and hyp_type == "formula" and isinstance(b.get("formula"), dict):
                     bbox = b["formula"].get("bbox")
                 hyps.append({"bbox": bbox})
@@ -428,11 +485,31 @@ def score_against_truth(bundle_dir: Path, truth: Dict[str, Any]) -> Dict[str, An
 
     table_f1 = _pooled_f1("tables", "table", "tables")
     fig_f1 = _pooled_f1("figures", "figure", "figures")
-    formula_f1 = _pooled_f1("formulas", "formula", "formulas")
+
+    # Formulas: F1 with partial credit for honest failures (crop + reason → 0.3)
+    formula_score: Optional[float] = None
+    if _dim_is_annotated(pages_truth, "formulas"):
+        refs: List[Dict[str, Any]] = []
+        hyps: List[Dict[str, Any]] = []
+        hyp_weights: List[float] = []
+        for page_no, tp in pages_truth.items():
+            if _field_level(tp, "formulas") is None:
+                continue
+            refs.extend(_as_bbox_items(tp.get("formulas") or []))
+            for b in _hyp_page_blocks(ir, page_no):
+                if b.get("type") != "formula":
+                    continue
+                f = b.get("formula") if isinstance(b.get("formula"), dict) else {}
+                bbox = b.get("bbox") or (f.get("bbox") if isinstance(f, dict) else None)
+                hyps.append({"bbox": bbox})
+                hyp_weights.append(_formula_hyp_weight(f if isinstance(f, dict) else {}))
+        formula_f1 = match_f1_iou_weighted(refs, hyps, hyp_weights)
+        formula_score = (
+            round(15.0 * formula_f1, 2) if formula_f1 is not None else None
+        )
 
     table_score = round(25.0 * table_f1, 2) if table_f1 is not None else None
     fig_score = round(20.0 * fig_f1, 2) if fig_f1 is not None else None
-    formula_score = round(15.0 * formula_f1, 2) if formula_f1 is not None else None
 
     # integrity: no provenance → always unscored under fail-closed
     integrity: Optional[float] = None

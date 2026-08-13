@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0-beta.5] - 2026-08-13
+
+### Changed
+- **pdf2md scoring is now fail-closed and page-aligned.** The previous quality score could
+  not discriminate between conversions: on IEC TR 62380 all six dimensions were pinned
+  (`text_ocr` saturated once `nonempty_page_ratio` passed 0.98, `tables` paid a flat 25.0
+  for "any table at all" so 331 tables scored the same as 1, and the rest were constants),
+  producing a 73.0 that was a checksum of "did the pipeline run". Scoring now compares per
+  page, aggregates `text_ocr` as a char-weighted mean, and drops unannotated dimensions
+  from both numerator and denominator. Reports carry `scored_dimensions`,
+  `unscored_dimensions`, `max_possible`, `total_raw`, `total_normalized_100` and
+  `truth_coverage`. `_score_dimensions` is now `heuristic_scores`, tagged
+  `kind=heuristic_no_truth`, and is a diagnostic field only — never `total_score` and never
+  the optimizer's ranking key.
+- `tables`, `figures` and `formulas` score as pooled F1 with IoU ≥ 0.5 matching, so false
+  positives cost precision. Empty reference ∩ empty candidate yields `null` (unscored),
+  never full marks. Items lacking a bbox can no longer match.
+- Optimizer ranking reads `total_normalized_100` and refuses to declare a winner when
+  `max_possible` is 0 or truth coverage is too thin (`insufficient_truth_coverage`).
+
+### Added
+- **Scanned-page table extraction** via `img2table` + local Tesseract (`extract_tables_img2table`),
+  covering borderless numeric grids that `pdfplumber` cannot see. On SIEMENS SN 29500 this
+  moves table extraction from 0 tables to real bilingual cells with geometry. Optional
+  extra: `pdf2md-scan-tables`; the import is lazy, so installs without it are unaffected.
+- `doctor` probes `img2table` and `cv2` and reports them as optional, naming the capability
+  that degrades when they are missing.
+- Figure detection routes are explicit (`vector` / `raster` / `region`) with recorded drop
+  reasons. Candidates covering ≥92% of the page are dropped as `full_page` and candidates
+  under 0.5% as `too_small`, so full-page scans and page logos no longer register as figures.
+
+### Fixed
+- **Blank pages no longer score as figures.** `convert.py` emitted a full-page figure only
+  when OCR returned under 80 characters, so figures appeared exactly when OCR failed. On
+  SIEMENS SN 29500 that awarded 17.0/20 for four blank pages — one of them pure white at
+  grayscale range (255, 255) — while those same pages pushed `nonempty_page_ratio` to 0.974
+  and broke the hard gate.
+- Formula candidates are no longer manufactured from bare math characters. The old regex
+  produced 256 blocks on IEC TR 62380, all of them failures, and wrote 256
+  `<!-- formula_failed -->` comments into the output. Failed formulas now carry a real crop
+  and a failure reason instead of `asset_path=None`.
+- `_write_generated_corpus` no longer hardcodes `profile: "fast"`, which had silently
+  disabled formulas for every benchmark run started from bare PDF paths.
+
+### Notes
+- Evaluation corpora under `runs/` are gitignored and not shipped.
+- Annotation provenance is three-tier across independent method families (geometry/text
+  layer, pixel/OCR, and a DocLayNet-lineage layout model used **only** to derive references,
+  never in the extraction path). Agreement ≥ 0.95 is `silver`; disagreement is `disputed`
+  and excluded from scoring. Nothing is human-verified — the corpora are machine-derived
+  and `verified_by` is null throughout. The layout model is reference evidence, not ground
+  truth. Scorable coverage is deliberately thin and reported as such.
+
 ## [1.5.0-beta.1] - 2026-08-12
 
 ### Added
