@@ -96,7 +96,153 @@ def generate_all(out_dir: Path) -> list[Path]:
     p.write_bytes(b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\nstartxref\n0\n%%EOF\nbroken")
     paths.append(p)
 
+    paths.append(generate_header_repeat(out_dir / "header_repeat.pdf"))
+    paths.append(generate_toc_page(out_dir / "toc_page.pdf"))
+    paths.append(generate_bad_toc_outline(out_dir / "bad_toc_outline.pdf"))
+    paths.append(generate_no_text_layer(out_dir / "no_text_layer.pdf"))
+    paths.append(generate_chapters_ok(out_dir / "chapters_ok.pdf"))
+
     return paths
+
+
+def generate_header_repeat(path: Path) -> Path:
+    """Same 'Chapter 1' at the same y on ≥3 pages — a running header, not chapter starts."""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    c = canvas.Canvas(str(path), pagesize=letter)
+    for i in range(4):
+        c.setFont("Helvetica", 10)
+        c.drawString(72, 750, "Chapter 1")
+        c.setFont("Helvetica", 12)
+        c.drawString(72, 680, f"Body paragraph on page {i + 1}.")
+        c.showPage()
+    c.save()
+    return path
+
+
+def generate_toc_page(path: Path) -> Path:
+    """Page 1 lists ≥3 chapter titles (contents). Real chapter starts are later."""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    c = canvas.Canvas(str(path), pagesize=letter)
+    # p1: contents listing — three different chapter titles on one page
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(72, 720, "Contents")
+    c.setFont("Helvetica", 12)
+    c.drawString(72, 680, "Chapter 1 Introduction")
+    c.drawString(72, 660, "Chapter 2 Methods")
+    c.drawString(72, 640, "Chapter 3 Results")
+    c.showPage()
+    # p2: filler / front matter
+    c.setFont("Helvetica", 12)
+    c.drawString(72, 720, "Preface material before any chapter.")
+    c.showPage()
+    # p3: real chapter 1
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(72, 720, "Chapter 1 Introduction")
+    c.setFont("Helvetica", 12)
+    c.drawString(72, 690, "Body of chapter one.")
+    c.showPage()
+    # p4: still chapter 1
+    c.setFont("Helvetica", 12)
+    c.drawString(72, 720, "More of chapter one.")
+    c.showPage()
+    # p5: real chapter 2
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(72, 720, "Chapter 2 Methods")
+    c.setFont("Helvetica", 12)
+    c.drawString(72, 690, "Body of chapter two.")
+    c.showPage()
+    # p6: still chapter 2
+    c.setFont("Helvetica", 12)
+    c.drawString(72, 720, "More of chapter two.")
+    c.showPage()
+    c.save()
+    return path
+
+
+def generate_bad_toc_outline(path: Path) -> Path:
+    """Embedded outline is all L1 and starts late — must be rejected, fall back to headings."""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    c = canvas.Canvas(str(path), pagesize=letter)
+    for i in range(12):
+        page = i + 1
+        c.setFont("Helvetica", 12)
+        c.drawString(72, 680, f"Body page {page}.")
+        if page == 3:
+            c.setFont("Helvetica-Bold", 16)
+            c.drawString(72, 720, "Chapter 1 Alpha")
+        elif page == 8:
+            c.setFont("Helvetica-Bold", 16)
+            c.drawString(72, 720, "Chapter 2 Beta")
+        else:
+            c.setFont("Helvetica", 12)
+            c.drawString(72, 720, f"Running text page {page}.")
+        # Bookmarks all level 0 (= PyMuPDF level 1), first at page 5 (> 12*0.1)
+        if page == 5:
+            c.bookmarkPage("e1")
+            c.addOutlineEntry("1.5.1 Windows install", "e1", level=0)
+        elif page == 8:
+            c.bookmarkPage("e2")
+            c.addOutlineEntry("1.5.2 License server", "e2", level=0)
+        elif page == 10:
+            c.bookmarkPage("e3")
+            c.addOutlineEntry("1.5.3 Client config", "e3", level=0)
+        c.showPage()
+    c.save()
+    return path
+
+
+def generate_no_text_layer(path: Path) -> Path:
+    """Pages with drawings only — no text operators."""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    c = canvas.Canvas(str(path), pagesize=letter)
+    for _ in range(3):
+        c.rect(72, 72, 200, 200)
+        c.line(72, 72, 272, 272)
+        c.showPage()
+    c.save()
+    return path
+
+
+def generate_chapters_ok(path: Path) -> Path:
+    """Front matter on p1-2, chapter 1 on p3-5, chapter 2 on p6-8."""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    c = canvas.Canvas(str(path), pagesize=letter)
+    for i in range(8):
+        page = i + 1
+        if page <= 2:
+            c.setFont("Helvetica-Bold", 14)
+            c.drawString(72, 720, "Preface")
+            c.setFont("Helvetica", 12)
+            c.drawString(72, 690, f"Front matter page {page}.")
+        elif page == 3:
+            c.setFont("Helvetica-Bold", 16)
+            c.drawString(72, 720, "Chapter 1 First topic")
+            c.setFont("Helvetica", 12)
+            c.drawString(72, 690, "Start of chapter one.")
+        elif page <= 5:
+            c.setFont("Helvetica", 12)
+            c.drawString(72, 720, f"Chapter one continues on page {page}.")
+        elif page == 6:
+            c.setFont("Helvetica-Bold", 16)
+            c.drawString(72, 720, "Chapter 2 Second topic")
+            c.setFont("Helvetica", 12)
+            c.drawString(72, 690, "Start of chapter two.")
+        else:
+            c.setFont("Helvetica", 12)
+            c.drawString(72, 720, f"Chapter two continues on page {page}.")
+        c.showPage()
+    c.save()
+    return path
 
 
 if __name__ == "__main__":

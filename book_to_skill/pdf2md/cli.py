@@ -97,6 +97,21 @@ def main(argv: list[str] | None = None) -> int:
     p_mer.add_argument("--descriptions", required=True, type=str)
     p_mer.add_argument("--strict", action="store_true")
 
+    p_ch = sub.add_parser("chapters", help="Detect chapter boundaries in a PDF")
+    p_ch.add_argument("--input", required=True, type=str)
+    p_ch.add_argument("--json", action="store_true", help="Machine-readable JSON")
+    p_ch.add_argument("--out", type=str, default=None, help="Write JSON to this path")
+
+    p_split = sub.add_parser("split", help="Split a PDF into per-chapter files")
+    p_split.add_argument("--input", required=True, type=str)
+    p_split.add_argument("--out-dir", required=True, type=str)
+    p_split.add_argument(
+        "--chapters",
+        type=str,
+        default=None,
+        help="chapters.json from `chapters --json`; omit to detect first",
+    )
+
     args = parser.parse_args(argv)
 
     if args.cmd == "doctor":
@@ -217,6 +232,42 @@ def main(argv: list[str] | None = None) -> int:
         rejected = report.get("rejected") or {}
         if args.strict and (report.get("unknown_ids") or any(rejected.values())):
             return 2
+        return 0
+
+    if args.cmd == "chapters":
+        from .chapters import detect_chapters, format_chapters_text, write_chapters_json
+
+        pdf = Path(args.input)
+        if not pdf.is_file():
+            print(f"chapters: no such PDF: {pdf}", file=sys.stderr)
+            return 2
+        result = detect_chapters(pdf)
+        if args.out:
+            write_chapters_json(result, Path(args.out))
+        if args.json:
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+        else:
+            sys.stdout.write(format_chapters_text(result))
+        return 0
+
+    if args.cmd == "split":
+        from .chapters import detect_chapters
+        from .split import split_by_chapters
+
+        pdf = Path(args.input)
+        if not pdf.is_file():
+            print(f"split: no such PDF: {pdf}", file=sys.stderr)
+            return 2
+        if args.chapters:
+            ch_path = Path(args.chapters)
+            if not ch_path.is_file():
+                print(f"split: no such chapters JSON: {ch_path}", file=sys.stderr)
+                return 2
+            chapters = json.loads(ch_path.read_text(encoding="utf-8"))
+        else:
+            chapters = detect_chapters(pdf)
+        manifest = split_by_chapters(pdf, Path(args.out_dir), chapters)
+        print(json.dumps(manifest, indent=2, ensure_ascii=False))
         return 0
 
     return 1
