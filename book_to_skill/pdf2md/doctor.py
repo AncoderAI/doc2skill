@@ -20,6 +20,41 @@ def _pkg(name: str) -> Dict[str, Any]:
         return {"installed": False, "version": None}
 
 
+def _optional_pkg(name: str) -> Dict[str, Any]:
+    info = _pkg(name)
+    info["optional"] = True
+    return info
+
+
+def _optional_opencv() -> Dict[str, Any]:
+    """Probe opencv-python-headless (preferred) or opencv-python; both provide cv2."""
+    for dist in ("opencv-python-headless", "opencv-python"):
+        info = _pkg(dist)
+        if info["installed"]:
+            info["optional"] = True
+            info["import_name"] = "cv2"
+            info["dist"] = dist
+            return info
+    try:
+        import cv2  # type: ignore[import-untyped]
+
+        return {
+            "installed": True,
+            "version": getattr(cv2, "__version__", None),
+            "optional": True,
+            "import_name": "cv2",
+            "dist": "cv2-import",
+        }
+    except ImportError:
+        return {
+            "installed": False,
+            "version": None,
+            "optional": True,
+            "import_name": "cv2",
+            "dist": "opencv-python-headless",
+        }
+
+
 def run_doctor() -> Dict[str, Any]:
     bins = {
         "tesseract": shutil.which("tesseract"),
@@ -36,6 +71,9 @@ def run_doctor() -> Dict[str, Any]:
         "docling": _pkg("docling"),
         "markitdown": _pkg("markitdown"),
         "firecrawl-anydoc": _pkg("firecrawl-anydoc"),
+        # Optional: scanned / borderless table CV path (not a hard dependency).
+        "img2table": _optional_pkg("img2table"),
+        "opencv-python-headless": _optional_opencv(),
     }
 
     # Prove net guard
@@ -70,17 +108,39 @@ def run_doctor() -> Dict[str, Any]:
     if not net_ok:
         issues.append("net_guard_failed")
 
+    # Optional deps: never fail doctor, but surface a clear capability gap.
+    hints: List[str] = []
+    if not packages["img2table"]["installed"] or not packages["opencv-python-headless"]["installed"]:
+        hints.append(
+            "optional_img2table_missing: scanned-page table extraction needs "
+            "img2table + opencv-python-headless (cv2). Without them the pipeline "
+            "falls back to OCR word-box projection, which often returns 0 tables "
+            "on borderless scans (e.g. SIEMENS). "
+            "Install: pip install 'book-to-skill[pdf2md-scan-tables]'"
+        )
+
+    licenses: Dict[str, Any] = {}
+    for name, info in packages.items():
+        if not info["installed"]:
+            continue
+        if name == "opencv-python-headless":
+            dist = info.get("dist") or "opencv-python-headless"
+            if dist == "cv2-import":
+                continue
+            licenses[dist] = _license(dist)
+        else:
+            licenses[name] = _license(name)
+
     return {
         "python": {"executable": sys.executable, "version": sys.version.split()[0]},
         "binaries": bins,
         "tesseract_langs": langs,
         "packages": packages,
         "net_guard": {"ok": net_ok, "error": net_error, "active_now": is_active()},
-        "licenses": {
-            name: _license(name) for name, info in packages.items() if info["installed"]
-        },
+        "licenses": licenses,
         "ok": len(issues) == 0,
         "issues": issues,
+        "hints": hints,
     }
 
 

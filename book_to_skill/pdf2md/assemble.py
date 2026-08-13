@@ -11,13 +11,25 @@ from .tables import table_has_spans, table_to_html, table_to_markdown
 
 def assemble_markdown(ir: DocumentIR) -> str:
     parts: List[str] = []
-    current_page = None
+    blocks_by_page: dict = {}
     for block in ir.blocks:
-        if block.page != current_page:
-            current_page = block.page
-            parts.append(f"\n<!-- page: {current_page} -->\n")
-        parts.append(_render_block(block))
-        parts.append("")
+        blocks_by_page.setdefault(block.page, []).append(block)
+
+    page_nos = [p.page for p in ir.pages] if ir.pages else sorted(blocks_by_page)
+    if not page_nos and blocks_by_page:
+        page_nos = sorted(blocks_by_page)
+
+    for page_no in page_nos:
+        parts.append(f"\n<!-- page: {page_no} -->\n")
+        for block in blocks_by_page.get(page_no, []):
+            parts.append(_render_block(block))
+            parts.append("")
+    # Orphan blocks on pages not listed in ir.pages
+    for page_no in sorted(set(blocks_by_page) - set(page_nos)):
+        parts.append(f"\n<!-- page: {page_no} -->\n")
+        for block in blocks_by_page[page_no]:
+            parts.append(_render_block(block))
+            parts.append("")
     return "\n".join(parts).strip() + "\n"
 
 

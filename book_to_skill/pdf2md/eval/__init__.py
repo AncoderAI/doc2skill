@@ -5,10 +5,22 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ..ir import validate_ir_dict
-from ..tables import parse_html_table, parse_markdown_table
+from ..tables import is_scorable_table, parse_html_table, parse_markdown_table
+
+DIM_MAX: Dict[str, float] = {
+    "text_ocr": 25.0,
+    "heading_order": 10.0,
+    "tables": 25.0,
+    "figures": 20.0,
+    "formulas": 15.0,
+    "integrity_offline": 5.0,
+}
+
+_PAGE_MARK_RE = re.compile(r"<!--\s*page:\s*(\d+)\s*-->", re.IGNORECASE)
+_PROVENANCE_FIELDS = ("text", "tables", "figures", "formulas")
 
 
 def cer(ref: str, hyp: str) -> float:
@@ -52,6 +64,121 @@ def f1(precision: float, recall: float) -> float:
     return 2 * precision * recall / (precision + recall)
 
 
+def split_markdown_pages(md: str) -> Dict[int, str]:
+    """Split document.md on <!-- page: N --> markers into {page_num: body}."""
+    matches = list(_PAGE_MARK_RE.finditer(md))
+    if not matches:
+        return {}
+    out: Dict[int, str] = {}
+    for i, m in enumerate(matches):
+        page = int(m.group(1))
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(md)
+        out[page] = md[start:end].strip()
+    return out
+
+
+def bbox_iou(
+    a: Sequence[float], b: Sequence[float]
+) -> float:
+    if len(a) < 4 or len(b) < 4:
+        return 0.0
+    ax0, ay0, ax1, ay1 = map(float, a[:4])
+    bx0, by0, bx1, by1 = map(float, b[:4])
+    ix0, iy0 = max(ax0, bx0), max(ay0, by0)
+    ix1, iy1 = min(ax1, bx1), min(ay1, by1)
+    iw, ih = max(0.0, ix1 - ix0), max(0.0, iy1 - iy0)
+    inter = iw * ih
+    if inter <= 0:
+        return 0.0
+    area_a = max(0.0, ax1 - ax0) * max(0.0, ay1 - ay0)
+    area_b = max(0.0, bx1 - bx0) * max(0.0, by1 - by0)
+    union = area_a + area_b - inter
+    return inter / union if union > 0 else 0.0
+
+
+def match_f1_iou(
+    refs: Sequence[Dict[str, Any]],
+    hyps: Sequence[Dict[str, Any]],
+    *,
+    iou_thresh: float = 0.5,
+) -> Optional[float]:
+    """Greedy one-to-one F1 with bbox IoU ≥ thresh.
+
+    Precision side is first-class: annotated-empty + candidate non-empty
+    (false positives, e.g. white-paper full-page figures) → F1 = 0.0.
+
+    Empty ∩ empty → ``None`` (no scoring signal). Callers must treat this as
+    unscored — never as a free 1.0 / full marks (that was a frozen-constant trap).
+    """
+    weights = [1.0] * len(hyps)
+    return match_f1_iou_weighted(refs, hyps, weights, iou_thresh=iou_thresh)
+
+
+def _formula_hyp_weight(formula: Dict[str, Any]) -> float:
+    """Successful latex → 1.0; failed with crop+reason → 0.3; else 0.0."""
+    if not formula:
+        return 0.0
+    if formula.get("failed"):
+        if formula.get("asset_path") and formula.get("failure_reason"):
+            return 0.3
+        return 0.0
+    if formula.get("latex"):
+        return 1.0
+    return 0.0
+
+
+def match_f1_iou_weighted(
+    refs: Sequence[Dict[str, Any]],
+    hyps: Sequence[Dict[str, Any]],
+    hyp_weights: Sequence[float],
+    *,
+    iou_thresh: float = 0.5,
+) -> Optional[float]:
+    """Like match_f1_iou but matched hyp contributes ``hyp_weights[j]`` credit.
+
+    Used so honest formula failures (weight 0.3) beat silent omission (weight 0).
+    Unmatched hyps still count fully in the precision denominator.
+
+    Empty ∩ empty → ``None`` (unscored), not 1.0.
+    """
+    if not refs and not hyps:
+        return None
+    if not refs and hyps:
+        return 0.0
+    if refs and not hyps:
+        return 0.0
+    weights = list(hyp_weights) + [1.0] * max(0, len(hyps) - len(hyp_weights))
+    pairs: List[Tuple[float, int, int]] = []
+    for i, ref in enumerate(refs):
+        rb = ref.get("bbox")
+        if not rb:
+            continue
+        for j, hyp in enumerate(hyps):
+            hb = hyp.get("bbox")
+            if not hb:
+                continue
+            iou = bbox_iou(rb, hb)
+            if iou >= iou_thresh:
+                pairs.append((iou, i, j))
+    pairs.sort(reverse=True)
+    used_r: set[int] = set()
+    used_h: set[int] = set()
+    credit = 0.0
+    for _, i, j in pairs:
+        if i in used_r or j in used_h:
+            continue
+        used_r.add(i)
+        used_h.add(j)
+        credit += float(weights[j])
+    # Missing bbox never matches (no spatial coincidence without coordinates).
+    # Unmatched no-bbox hyps still count in the precision denominator; no-bbox
+    # refs still count in the recall denominator.
+    precision = credit / len(hyps)
+    recall = credit / len(refs)
+    return f1(precision, recall)
+
+
 def validate_bundle(bundle_dir: Path) -> Dict[str, Any]:
     errors: List[str] = []
     md = bundle_dir / "document.md"
@@ -80,42 +207,352 @@ def validate_bundle(bundle_dir: Path) -> Dict[str, Any]:
     return {"ok": len(errors) == 0, "errors": errors}
 
 
-def score_against_truth(bundle_dir: Path, truth: Dict[str, Any]) -> Dict[str, float]:
-    """Score a bundle against a truth manifest fragment."""
-    md = (bundle_dir / "document.md").read_text(encoding="utf-8") if (bundle_dir / "document.md").exists() else ""
-    ir = json.loads((bundle_dir / "document.ir.json").read_text(encoding="utf-8")) if (bundle_dir / "document.ir.json").exists() else {}
-    hyp_text = md
-    ref_text = truth.get("text", "")
-    text_score = 25.0 * max(0.0, 1.0 - cer(ref_text, hyp_text)) if ref_text else 12.5
+def _empty_score_result(
+    *,
+    pages_annotated: int = 0,
+    pages_total: int = 0,
+    gold_fields: int = 0,
+    silver_fields: int = 0,
+    disputed_fields: int = 0,
+    scorable_by_field: Optional[Dict[str, int]] = None,
+) -> Dict[str, Any]:
+    dims = list(DIM_MAX.keys())
+    out: Dict[str, Any] = {d: None for d in dims}
+    out.update(
+        {
+            "scored_dimensions": [],
+            "unscored_dimensions": dims,
+            "max_possible": 0,
+            "total_raw": 0.0,
+            "total_normalized_100": 0.0,
+            "total": 0.0,
+            "truth_coverage": {
+                "pages_annotated": pages_annotated,
+                "pages_total": pages_total,
+                "gold_fields": gold_fields,
+                "silver_fields": silver_fields,
+                "disputed_fields": disputed_fields,
+                "scorable_by_field": scorable_by_field
+                or {f: 0 for f in _PROVENANCE_FIELDS},
+            },
+        }
+    )
+    return out
 
-    ref_blocks = truth.get("block_ids", [])
-    hyp_blocks = [b.get("block_id") for b in ir.get("blocks", [])]
-    order_score = 10.0 * max(0.0, (kendall_tau(ref_blocks, hyp_blocks) + 1) / 2) if ref_blocks else 5.0
 
-    ref_tables = truth.get("tables", [])
-    hyp_tables = [b for b in ir.get("blocks", []) if b.get("type") == "table"]
-    table_recall = len(hyp_tables) / max(len(ref_tables), 1) if ref_tables else (1.0 if hyp_tables else 0.5)
-    table_score = 25.0 * min(1.0, table_recall)
+def _page_truth_map(truth: Dict[str, Any]) -> Dict[int, Dict[str, Any]]:
+    raw = truth.get("pages") or {}
+    out: Dict[int, Dict[str, Any]] = {}
+    for k, v in raw.items():
+        if not isinstance(v, dict):
+            continue
+        page = int(v.get("page", k))
+        out[page] = v
+    return out
 
-    ref_figs = truth.get("figures", 0)
-    hyp_figs = sum(1 for b in ir.get("blocks", []) if b.get("type") == "figure")
-    fig_score = 20.0 * min(1.0, hyp_figs / max(ref_figs, 1)) if ref_figs else (10.0 if hyp_figs else 8.0)
 
-    ref_forms = truth.get("formulas", [])
-    hyp_forms = [b for b in ir.get("blocks", []) if b.get("type") == "formula"]
-    formula_score = 15.0 * min(1.0, len([f for f in hyp_forms if not (f.get("formula") or {}).get("failed")]) / max(len(ref_forms), 1)) if ref_forms else 8.0
+def _field_level(page: Dict[str, Any], field: str) -> Optional[str]:
+    """Return gold/silver only. disputed is unscored (same as missing)."""
+    prov = (page.get("provenance") or {}).get(field) or {}
+    level = prov.get("level")
+    if level in ("gold", "silver"):
+        return level
+    return None
 
-    integrity = 5.0 if validate_bundle(bundle_dir)["ok"] else 1.0
-    total = text_score + order_score + table_score + fig_score + formula_score + integrity
-    return {
-        "text_ocr": round(text_score, 2),
-        "heading_order": round(order_score, 2),
-        "tables": round(table_score, 2),
-        "figures": round(fig_score, 2),
-        "formulas": round(formula_score, 2),
-        "integrity_offline": round(integrity, 2),
-        "total": round(total, 2),
+
+def _coverage_counts(
+    pages: Dict[int, Dict[str, Any]],
+) -> Tuple[int, int, int, Dict[str, int]]:
+    gold = silver = disputed = 0
+    scorable_by_field = {f: 0 for f in _PROVENANCE_FIELDS}
+    for page in pages.values():
+        prov = page.get("provenance") or {}
+        for field in _PROVENANCE_FIELDS:
+            level = (prov.get(field) or {}).get("level")
+            if level == "gold":
+                gold += 1
+                scorable_by_field[field] += 1
+            elif level == "silver":
+                silver += 1
+                scorable_by_field[field] += 1
+            elif level == "disputed":
+                disputed += 1
+    return gold, silver, disputed, scorable_by_field
+
+
+def _dim_is_annotated(pages: Dict[int, Dict[str, Any]], dim: str) -> bool:
+    if dim == "integrity_offline":
+        # No gold/silver provenance path in A.3 schema → never scored from truth.
+        return False
+    if dim == "heading_order":
+        # Only pages with blocks AND scorable text (gold/silver) contribute.
+        return any(
+            "blocks" in p and _field_level(p, "text") is not None for p in pages.values()
+        )
+    field = {
+        "text_ocr": "text",
+        "tables": "tables",
+        "figures": "figures",
+        "formulas": "formulas",
+    }.get(dim)
+    if not field:
+        return False
+    if field == "tables":
+        # Caption shells do not create a tables scoring basis.
+        for p in pages.values():
+            if _field_level(p, "tables") is None:
+                continue
+            items = p.get("tables")
+            if items is None:
+                continue
+            if any(is_scorable_table(t) for t in items):
+                return True
+            if items == []:
+                return True
+        return False
+    return any(_field_level(p, field) is not None for p in pages.values())
+
+
+def _hyp_page_blocks(ir: Dict[str, Any], page: int) -> List[Dict[str, Any]]:
+    return [b for b in ir.get("blocks", []) if int(b.get("page") or 0) == page]
+
+
+def _heading_order_page_score(
+    truth_page: Dict[str, Any], hyp_blocks: List[Dict[str, Any]]
+) -> Optional[float]:
+    if "blocks" not in truth_page:
+        return None
+    ref_blocks = sorted(
+        truth_page.get("blocks") or [],
+        key=lambda b: int(b.get("order") if b.get("order") is not None else 0),
+    )
+    if len(ref_blocks) < 1:
+        # Explicitly empty annotation: any hypothesized blocks are false structure.
+        return 10.0 if len(hyp_blocks) < 1 else 0.0
+    if len(hyp_blocks) < 1:
+        return 0.0
+    # Build shared IDs by greedy type matching in reading order.
+    ref_ids = [f"r{i}:{b.get('type')}" for i, b in enumerate(ref_blocks)]
+    hyp_ids: List[str] = []
+    used: set[int] = set()
+    for hb in hyp_blocks:
+        htype = hb.get("type")
+        best = None
+        for i, rb in enumerate(ref_blocks):
+            if i in used:
+                continue
+            if rb.get("type") != htype:
+                continue
+            # Prefer bbox IoU when both have bbox
+            score = 1.0
+            if rb.get("bbox") and hb.get("bbox"):
+                score = bbox_iou(rb["bbox"], hb["bbox"])
+            if best is None or score > best[0]:
+                best = (score, i)
+        if best is not None and (best[0] >= 0.1 or ref_blocks[best[1]].get("type") == htype):
+            used.add(best[1])
+            hyp_ids.append(ref_ids[best[1]])
+        else:
+            hyp_ids.append(f"h-unmatched:{htype}:{len(hyp_ids)}")
+    tau = kendall_tau(ref_ids, hyp_ids)
+    return 10.0 * max(0.0, (tau + 1.0) / 2.0)
+
+
+def _as_bbox_items(
+    items: Sequence[Any], *, bbox_key: str = "bbox"
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for it in items:
+        if isinstance(it, dict):
+            out.append({"bbox": it.get(bbox_key) or it.get("bbox")})
+        else:
+            out.append({"bbox": None})
+    return out
+
+
+def score_against_truth(bundle_dir: Path, truth: Dict[str, Any]) -> Dict[str, Any]:
+    """Page-aligned fail-closed scoring against gold/silver annotations.
+
+    Only pages present in ``truth["pages"]`` participate. Dimensions without
+    gold/silver provenance are ``null`` and excluded from the denominator.
+    """
+    truth = truth or {}
+    pages_truth = _page_truth_map(truth)
+    pages_total = int(truth.get("pages_total") or 0)
+    gold_fields, silver_fields, disputed_fields, scorable_by_field = _coverage_counts(
+        pages_truth
+    )
+
+    if not pages_truth:
+        return _empty_score_result(
+            pages_annotated=0,
+            pages_total=pages_total,
+            gold_fields=gold_fields,
+            silver_fields=silver_fields,
+            disputed_fields=disputed_fields,
+            scorable_by_field=scorable_by_field,
+        )
+
+    md_path = bundle_dir / "document.md"
+    ir_path = bundle_dir / "document.ir.json"
+    md = md_path.read_text(encoding="utf-8") if md_path.is_file() else ""
+    ir = json.loads(ir_path.read_text(encoding="utf-8")) if ir_path.is_file() else {}
+    md_pages = split_markdown_pages(md)
+
+    # --- text_ocr: char-weighted mean of per-page (1-CER)*25 ---
+    text_score: Optional[float] = None
+    if _dim_is_annotated(pages_truth, "text_ocr"):
+        weighted_sum = 0.0
+        weight = 0
+        for page_no, tp in pages_truth.items():
+            if _field_level(tp, "text") is None:
+                continue
+            ref = tp.get("text") or ""
+            hyp = md_pages.get(page_no, "")
+            w = max(len(ref), 1)
+            page_s = 25.0 * max(0.0, 1.0 - cer(ref, hyp))
+            weighted_sum += page_s * w
+            weight += w
+        text_score = round(weighted_sum / weight, 2) if weight else 0.0
+
+    # --- heading_order: mean over pages that annotate blocks ---
+    order_score: Optional[float] = None
+    if _dim_is_annotated(pages_truth, "heading_order"):
+        vals: List[float] = []
+        weights: List[int] = []
+        for page_no, tp in pages_truth.items():
+            if "blocks" not in tp:
+                continue
+            # Disputed text pages do not contribute to heading_order.
+            if _field_level(tp, "text") is None:
+                continue
+            hyp_blocks = _hyp_page_blocks(ir, page_no)
+            s = _heading_order_page_score(tp, hyp_blocks)
+            if s is None:
+                continue
+            n_ref = max(len(tp.get("blocks") or []), 1)
+            vals.append(s)
+            weights.append(n_ref)
+        if vals:
+            order_score = round(
+                sum(v * w for v, w in zip(vals, weights)) / sum(weights), 2
+            )
+        else:
+            order_score = None
+
+    # --- tables / figures / formulas: pooled F1 on annotated pages ---
+    def _pooled_f1(
+        field: str, hyp_type: str, dim: str
+    ) -> Optional[float]:
+        if not _dim_is_annotated(pages_truth, dim):
+            return None
+        refs: List[Dict[str, Any]] = []
+        hyps: List[Dict[str, Any]] = []
+        for page_no, tp in pages_truth.items():
+            if _field_level(tp, field) is None:
+                continue
+            raw_refs = list(tp.get(field) or [])
+            if field == "tables":
+                # Caption shells / incomplete geometry do not enter the ref pool.
+                # Pages that only have shells contribute no tables signal (skip).
+                scorable_refs = [t for t in raw_refs if is_scorable_table(t)]
+                if raw_refs and not scorable_refs:
+                    continue
+                refs.extend(_as_bbox_items(scorable_refs))
+            else:
+                refs.extend(_as_bbox_items(raw_refs))
+            page_hyps = [
+                b
+                for b in _hyp_page_blocks(ir, page_no)
+                if b.get("type") == hyp_type
+            ]
+            for b in page_hyps:
+                if hyp_type == "table":
+                    t = b.get("table") if isinstance(b.get("table"), dict) else {}
+                    merged = dict(t) if isinstance(t, dict) else {}
+                    merged["bbox"] = b.get("bbox") or merged.get("bbox")
+                    if not is_scorable_table(merged):
+                        continue
+                    hyps.append({"bbox": merged.get("bbox")})
+                    continue
+                bbox = b.get("bbox")
+                if not bbox and hyp_type == "figure" and isinstance(b.get("figure"), dict):
+                    bbox = b["figure"].get("bbox")
+                if not bbox and hyp_type == "formula" and isinstance(b.get("formula"), dict):
+                    bbox = b["formula"].get("bbox")
+                hyps.append({"bbox": bbox})
+        return match_f1_iou(refs, hyps)
+
+    table_f1 = _pooled_f1("tables", "table", "tables")
+    fig_f1 = _pooled_f1("figures", "figure", "figures")
+
+    # Formulas: F1 with partial credit for honest failures (crop + reason → 0.3)
+    formula_score: Optional[float] = None
+    if _dim_is_annotated(pages_truth, "formulas"):
+        refs: List[Dict[str, Any]] = []
+        hyps: List[Dict[str, Any]] = []
+        hyp_weights: List[float] = []
+        for page_no, tp in pages_truth.items():
+            if _field_level(tp, "formulas") is None:
+                continue
+            refs.extend(_as_bbox_items(tp.get("formulas") or []))
+            for b in _hyp_page_blocks(ir, page_no):
+                if b.get("type") != "formula":
+                    continue
+                f = b.get("formula") if isinstance(b.get("formula"), dict) else {}
+                bbox = b.get("bbox") or (f.get("bbox") if isinstance(f, dict) else None)
+                hyps.append({"bbox": bbox})
+                hyp_weights.append(_formula_hyp_weight(f if isinstance(f, dict) else {}))
+        formula_f1 = match_f1_iou_weighted(refs, hyps, hyp_weights)
+        formula_score = (
+            round(15.0 * formula_f1, 2) if formula_f1 is not None else None
+        )
+
+    table_score = round(25.0 * table_f1, 2) if table_f1 is not None else None
+    fig_score = round(20.0 * fig_f1, 2) if fig_f1 is not None else None
+
+    # integrity: no provenance → always unscored under fail-closed
+    integrity: Optional[float] = None
+
+    dim_values: Dict[str, Optional[float]] = {
+        "text_ocr": text_score,
+        "heading_order": order_score,
+        "tables": table_score,
+        "figures": fig_score,
+        "formulas": formula_score,
+        "integrity_offline": integrity,
     }
+
+    scored = [d for d, v in dim_values.items() if v is not None]
+    unscored = [d for d, v in dim_values.items() if v is None]
+    total_raw = round(sum(float(dim_values[d]) for d in scored), 2)
+    max_possible = int(sum(DIM_MAX[d] for d in scored))
+    if max_possible == 0:
+        total_normalized = 0.0
+    else:
+        total_normalized = round(100.0 * total_raw / max_possible, 2)
+
+    result: Dict[str, Any] = {d: dim_values[d] for d in DIM_MAX}
+    result.update(
+        {
+            "scored_dimensions": scored,
+            "unscored_dimensions": unscored,
+            "max_possible": max_possible,
+            "total_raw": total_raw,
+            "total_normalized_100": total_normalized,
+            # Alias for older callers; ranking must prefer total_normalized_100.
+            "total": total_normalized,
+            "truth_coverage": {
+                "pages_annotated": len(pages_truth),
+                "pages_total": pages_total or len(pages_truth),
+                "gold_fields": gold_fields,
+                "silver_fields": silver_fields,
+                "disputed_fields": disputed_fields,
+                "scorable_by_field": scorable_by_field,
+            },
+        }
+    )
+    return result
 
 
 def _lev(a: str, b: str) -> int:

@@ -40,7 +40,9 @@ def repeated_line_candidates(
     page_texts: Sequence[str], fraction: float = 0.5
 ) -> List[Tuple[str, int]]:
     n = len(page_texts)
-    if n == 0:
+    # Need ≥2 pages to claim a line "repeats across pages". A 1-page PDF
+    # would otherwise treat every line as a watermark and wipe the document.
+    if n < 2:
         return []
     threshold = n * fraction
     counts: Counter[str] = Counter()

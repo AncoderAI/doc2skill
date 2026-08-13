@@ -52,6 +52,12 @@ def main(argv: list[str] | None = None) -> int:
         default=6,
         help="Pages per PDF when passing files directly (0 = every page)",
     )
+    p_bench.add_argument(
+        "--profile",
+        choices=["auto", "fast", "accurate"],
+        default="accurate",
+        help="Profile for generated corpus manifests (was hard-coded fast)",
+    )
     p_bench.add_argument("--json", action="store_true", help="Machine-readable JSON")
 
     p_opt = sub.add_parser("optimize", help="Search profiles and optionally auto-commit")
@@ -70,6 +76,8 @@ def main(argv: list[str] | None = None) -> int:
             sys.stdout.write(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
         else:
             print("ok:" if report["ok"] else "NOT OK:", report.get("issues"))
+            for hint in report.get("hints") or []:
+                print("hint:", hint)
             print(json.dumps(report, indent=2, ensure_ascii=False))
         return 0 if report["ok"] else 1
 
@@ -113,7 +121,9 @@ def main(argv: list[str] | None = None) -> int:
                 for path in missing:
                     print(f"benchmark: no such PDF: {path}", file=sys.stderr)
                 return 2
-            corpus_path = _write_generated_corpus(args.pdfs, run_dir, args.sample)
+            corpus_path = _write_generated_corpus(
+                args.pdfs, run_dir, args.sample, profile=args.profile
+            )
 
         result = run_benchmark(corpus_path, run_dir)
         if args.json:
@@ -156,7 +166,9 @@ def _sample_pages(total: int, sample: int) -> list[int] | None:
     return sorted({1 + round(i * step) for i in range(sample)})
 
 
-def _write_generated_corpus(pdfs: list[str], run_dir: Path, sample: int) -> Path:
+def _write_generated_corpus(
+    pdfs: list[str], run_dir: Path, sample: int, *, profile: str = "accurate"
+) -> Path:
     """Build a manifest from bare PDF paths so callers need not hand-write one.
 
     It is written to disk rather than kept in memory so the run stays
@@ -179,7 +191,7 @@ def _write_generated_corpus(pdfs: list[str], run_dir: Path, sample: int) -> Path
         entry = {
             "id": candidate,
             "path": str(pdf_path),
-            "profile": "fast",
+            "profile": profile,
             "require_pass": False,
         }
         pages = _sample_pages(total, sample) if total else None

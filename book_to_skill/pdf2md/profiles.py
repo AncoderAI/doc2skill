@@ -23,6 +23,7 @@ class ConvertProfile:
     enable_formulas: bool = True
     enable_figures: bool = True
     enable_charts: bool = True
+    enable_ocr_tables: bool = False  # scanned-page OCR word-box → projection grid tables
     html_tables_on_span: bool = True
     figure_caption_prompt: str = (
         "Describe the figure briefly for retrieval; list visible labels."
@@ -56,6 +57,7 @@ PROFILES: Dict[str, ConvertProfile] = {
         enable_formulas=True,
         enable_figures=True,
         enable_charts=True,
+        enable_ocr_tables=True,
         ocr_psm=3,
     ),
     "auto": ConvertProfile(name="auto"),
