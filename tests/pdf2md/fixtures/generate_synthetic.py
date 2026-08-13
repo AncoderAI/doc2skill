@@ -245,6 +245,107 @@ def generate_chapters_ok(path: Path) -> Path:
     return path
 
 
+def generate_split_heading(path: Path) -> Path:
+    """Single page: bare '2' then 'Normative references' on the next line."""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    c = canvas.Canvas(str(path), pagesize=letter)
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(72, 720, "2")
+    c.drawString(72, 700, "Normative references")
+    c.setFont("Helvetica", 11)
+    c.drawString(72, 670, "Body of the clause follows here.")
+    c.save()
+    return path
+
+
+def generate_split_heading_midpage(path: Path) -> Path:
+    """Split heading after more than 30 body lines — must still be detected."""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    c = canvas.Canvas(str(path), pagesize=letter)
+    c.setFont("Helvetica", 11)
+    y = 750
+    for i in range(32):
+        c.drawString(72, y, f"Preamble sentence number {i + 1} continues the body.")
+        y -= 14
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(72, y, "3")
+    c.drawString(72, y - 16, "Terms and definitions")
+    c.save()
+    return path
+
+
+def generate_number_regression(path: Path) -> Path:
+    """Numbers 1, 2, 7, 3, 8 on separate pages — 3 is a regression."""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    c = canvas.Canvas(str(path), pagesize=letter)
+    for number, title in (
+        (1, "Alpha Topic"),
+        (2, "Beta Topic"),
+        (7, "Gamma Topic"),
+        (3, "Delta Topic"),
+        (8, "Epsilon Topic"),
+    ):
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(72, 720, str(number))
+        c.drawString(72, 700, title)
+        c.setFont("Helvetica", 11)
+        c.drawString(72, 670, f"Body for {title}.")
+        c.showPage()
+    c.save()
+    return path
+
+
+def generate_number_gap(path: Path) -> Path:
+    """Chapter 1 then chapter 6 — gap warning, no fabricated 2–5."""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    c = canvas.Canvas(str(path), pagesize=letter)
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(72, 720, "1")
+    c.drawString(72, 700, "First Topic Name")
+    c.showPage()
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(72, 720, "6")
+    c.drawString(72, 700, "Sixth Topic Name")
+    c.save()
+    return path
+
+
+def generate_split_toc_page(path: Path) -> Path:
+    """Page 1 has ≥3 split number+title groups (contents). Real chapter starts later."""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    c = canvas.Canvas(str(path), pagesize=letter)
+    c.setFont("Helvetica-Bold", 14)
+    y = 720
+    for number, title in (
+        (1, "Alpha Listing"),
+        (2, "Beta Listing"),
+        (3, "Gamma Listing"),
+    ):
+        c.drawString(72, y, str(number))
+        c.drawString(72, y - 16, title)
+        y -= 48
+    c.showPage()
+    c.setFont("Helvetica", 12)
+    c.drawString(72, 720, "Preface material before any chapter.")
+    c.showPage()
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(72, 720, "Chapter 1 Real Introduction")
+    c.setFont("Helvetica", 12)
+    c.drawString(72, 690, "Body of the real first chapter.")
+    c.save()
+    return path
+
+
 if __name__ == "__main__":
     root = Path(__file__).resolve().parents[3]
     out = root / "tests" / "pdf2md" / "fixtures" / "synthetic"

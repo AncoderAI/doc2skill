@@ -31,6 +31,12 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Optional 1-based page list, e.g. 1,2,5-8 (debug/sentinel)",
     )
+    p_conv.add_argument(
+        "--page-offset",
+        type=int,
+        default=0,
+        help="Add N to every emitted page number (default 0)",
+    )
 
     p_bench = sub.add_parser("benchmark", help="Run teacher + candidate benchmark")
     p_bench.add_argument(
@@ -139,6 +145,7 @@ def main(argv: list[str] | None = None) -> int:
             profile=args.profile,
             strict=args.strict,
             profile_overrides=overrides or None,
+            page_offset=args.page_offset,
         )
         print(json.dumps({"passed": report.get("passed"), "total_score": report.get("total_score"), "failures": report.get("failures")}, ensure_ascii=False))
         if args.strict and not report.get("passed"):

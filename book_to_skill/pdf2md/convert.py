@@ -161,11 +161,13 @@ def convert_pdf(
     strict: bool = False,
     profile_overrides: Optional[Dict[str, Any]] = None,
     install_network_guard: bool = True,
+    page_offset: int = 0,
 ) -> Dict[str, Any]:
     """Convert PDF to pdf2md bundle. Returns quality report dict.
 
     On hard-gate failure with ``strict=True``, raises ``SystemExit``-style via
     returning report with passed=False; caller CLI maps to nonzero exit.
+    ``page_offset`` is added to every emitted page number (default 0).
     """
     t0 = time.perf_counter()
     if install_network_guard:
@@ -178,7 +180,7 @@ def convert_pdf(
 
     try:
         return _convert_pdf_body(
-            pdf_path, out, profile, strict, profile_overrides, t0
+            pdf_path, out, profile, strict, profile_overrides, t0, page_offset
         )
     finally:
         close_all()
@@ -191,6 +193,7 @@ def _convert_pdf_body(
     strict: bool,
     profile_overrides: Optional[Dict[str, Any]],
     t0: float,
+    page_offset: int = 0,
 ) -> Dict[str, Any]:
     prof = resolve_profile(profile, profile_overrides)
     if not prof.ocr_lang or prof.ocr_lang == "eng":
@@ -204,7 +207,7 @@ def _convert_pdf_body(
     ir: Optional[DocumentIR] = None
     try:
         if profile in ("accurate", "auto"):
-            ir = _try_docling(pdf_path, out, prof)
+            ir = _try_docling(pdf_path, out, prof, page_offset=page_offset)
             if ir is not None:
                 engine_name = "docling"
     except Exception:  # noqa: BLE001 — record, fall back
@@ -212,7 +215,7 @@ def _convert_pdf_body(
         pass
 
     if ir is None:
-        ir = _convert_local(pdf_path, out, prof)
+        ir = _convert_local(pdf_path, out, prof, page_offset=page_offset)
         engine_name = "local"
     ir.engine = engine_name
     ir.profile = prof.name
@@ -315,7 +318,9 @@ def _apply_round_trips(ir: DocumentIR, md_text: str) -> None:
                 b.meta["round_trip"] = "ok"
 
 
-def _try_docling(pdf_path: Path, out: Path, prof: ConvertProfile) -> Optional[DocumentIR]:
+def _try_docling(
+    pdf_path: Path, out: Path, prof: ConvertProfile, *, page_offset: int = 0
+) -> Optional[DocumentIR]:
     try:
         from docling.document_converter import DocumentConverter, PdfFormatOption
         from docling.datamodel.pipeline_options import PdfPipelineOptions
@@ -350,7 +355,7 @@ def _try_docling(pdf_path: Path, out: Path, prof: ConvertProfile) -> Optional[Do
     if len(pages) == 1:
         ir.pages = [
             PageInfo(
-                page=i + 1,
+                page=i + 1 + page_offset,
                 width=0,
                 height=0,
                 rotation=0,
@@ -358,22 +363,30 @@ def _try_docling(pdf_path: Path, out: Path, prof: ConvertProfile) -> Optional[Do
             )
             for i in range(page_count)
         ]
-        ir.blocks.extend(_text_to_blocks(1, md))
+        ir.blocks.extend(_text_to_blocks(1 + page_offset, md))
     # Always also run local enrichment for tables on native pages is skipped when docling works
     # Ensure page infos exist
     if not ir.pages:
         for i in range(page_count):
             w, h, rot = page_size(pdf_path, i)
             ir.pages.append(
-                PageInfo(page=i + 1, width=w, height=h, rotation=rot, page_type=PageType.NATIVE_TEXT)
+                PageInfo(
+                    page=i + 1 + page_offset,
+                    width=w,
+                    height=h,
+                    rotation=rot,
+                    page_type=PageType.NATIVE_TEXT,
+                )
             )
     if not ir.blocks:
-        ir.blocks.extend(_text_to_blocks(1, md))
+        ir.blocks.extend(_text_to_blocks(1 + page_offset, md))
         ir.warnings.append("docling_markdown_without_page_markers")
     return ir
 
 
-def _convert_local(pdf_path: Path, out: Path, prof: ConvertProfile) -> DocumentIR:
+def _convert_local(
+    pdf_path: Path, out: Path, prof: ConvertProfile, *, page_offset: int = 0
+) -> DocumentIR:
     page_count = _page_count(str(pdf_path))
     pages = list(range(page_count))
     if prof.page_filter:
@@ -411,7 +424,7 @@ def _convert_local(pdf_path: Path, out: Path, prof: ConvertProfile) -> DocumentI
     kept_by_fp: Dict[str, List[Block]] = {}
 
     for i in pages:
-        page_no = i + 1
+        page_no = i + 1 + page_offset
         w, h, pdf_rot = page_size(pdf_path, i)
         native = strip_watermarks(native_texts[i], watermark_lines)
         img_count = _embedded_image_count(str(pdf_path), i)

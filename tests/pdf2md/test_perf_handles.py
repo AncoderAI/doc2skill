@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -129,3 +130,28 @@ def test_out_of_range_page_returns_empty():
     assert extract_tables_pdfplumber(pdf, 999) == []
     assert detect_raster_figures(pdf, 999, 1000, 612.0, 792.0) == []
     assert detect_raster_figures(pdf, -1, 0, 612.0, 792.0) == []
+
+
+def test_page_offset_shifts_markdown_and_ir(tmp_path):
+    pytest.importorskip("pypdfium2")
+    pytest.importorskip("pdfplumber")
+    pdf = FIXTURES / "native_text.pdf"
+    out = tmp_path / "offset"
+    convert_pdf(pdf, out, profile="fast", page_offset=37)
+    md = (out / "document.md").read_text(encoding="utf-8")
+    assert md.lstrip().startswith("<!-- page: 38 -->")
+    ir = json.loads((out / "document.ir.json").read_text(encoding="utf-8"))
+    assert ir["pages"][0]["page"] == 38
+    assert all(b["page"] >= 38 for b in ir["blocks"])
+
+
+def test_page_offset_zero_matches_omitted_argument(tmp_path):
+    pytest.importorskip("pypdfium2")
+    pytest.importorskip("pdfplumber")
+    pdf = FIXTURES / "native_text.pdf"
+    a = tmp_path / "default"
+    b = tmp_path / "explicit_zero"
+    convert_pdf(pdf, a, profile="fast")
+    convert_pdf(pdf, b, profile="fast", page_offset=0)
+    assert (a / "document.md").read_bytes() == (b / "document.md").read_bytes()
+    assert (a / "document.ir.json").read_bytes() == (b / "document.ir.json").read_bytes()

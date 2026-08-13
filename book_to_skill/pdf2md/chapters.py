@@ -22,7 +22,10 @@ _HEADER_Y_TOL_PT = 12.0
 _TOC_PAGE_MIN_TITLES = 3
 
 # Numbered Latin headings (IEC-style "10 Capacitors…") only count near the top.
+# Split number/title pairs are exempt — they occur mid-page in IEC TR 62380.
 _NUM_HEADING_TOP_FRAC = 0.22
+_SPLIT_TITLE_MIN = 3
+_SPLIT_TITLE_MAX = 70
 
 _MIN_USABLE_CHARS = 40
 
@@ -114,8 +117,9 @@ def detect_chapters(pdf_path: Path) -> dict:
     hits = _heading_hits(lines)
     hits = _drop_running_headers(hits)
     hits = _drop_toc_page_hits(hits, pages_text)
-    hits = _first_hit_per_page(hits)
     hits = _first_hit_per_number(hits)
+    hits = _drop_number_regressions(hits)
+    _append_numbering_gap_warnings(hits, warnings)
     chapters = _hits_to_chapters(hits, page_count, pages_text)
     if not chapters:
         warnings.append("no chapter headings detected after header/TOC-page filters")
@@ -250,26 +254,6 @@ def _merge_split_headings(lines: list[_Line]) -> list[_Line]:
             )
             skip_next = True
             continue
-        if _NUM_ONLY.match(line.text) and _NUM_HEADING.match(f"{line.text} {nxt.text}"):
-            # IEC splits "1" and "Scope" on the same baseline; table cells are not.
-            same_line = abs(nxt.y - line.y) <= 3.0
-            heading_size = line.size >= 10.0
-            if same_line and heading_size and (
-                _looks_like_title_tail(nxt.text) or (
-                    len(nxt.text) >= 4 and not nxt.text.endswith((".", "。", "!", "？", "?"))
-                )
-            ):
-                merged.append(
-                    _Line(
-                        page=line.page,
-                        text=f"{line.text} {nxt.text}".strip(),
-                        y=line.y,
-                        size=max(line.size, nxt.size),
-                        page_height=line.page_height,
-                    )
-                )
-                skip_next = True
-                continue
         merged.append(line)
     return merged
 
@@ -376,13 +360,67 @@ def _chapters_from_toc(
 
 
 def _heading_hits(lines: Iterable[_Line]) -> list[_Hit]:
+    line_list = list(lines)
     hits: list[_Hit] = []
-    for line in lines:
-        parsed = _parse_heading_line(line)
-        if parsed is None:
+    skip_next = False
+    for i, line in enumerate(line_list):
+        if skip_next:
+            skip_next = False
             continue
-        hits.append(parsed)
+        nxt = line_list[i + 1] if i + 1 < len(line_list) else None
+        split = _parse_split_heading(line, nxt)
+        if split is not None:
+            hits.append(split)
+            skip_next = True
+            continue
+        parsed = _parse_heading_line(line)
+        if parsed is not None:
+            hits.append(parsed)
     return hits
+
+
+def _parse_split_heading(line: _Line, nxt: _Line | None) -> _Hit | None:
+    """Join a bare 1–99 line with the next non-empty title line, anywhere on the page."""
+    if nxt is None or nxt.page != line.page:
+        return None
+    m = _NUM_ONLY.match(line.text.strip())
+    if not m:
+        return None
+    number = int(m.group(1))
+    if not 1 <= number <= 99:
+        return None
+    if line.size < 10.5:
+        return None
+    if not _split_title_ok(nxt.text):
+        return None
+    title = _clean_title(f"{number} {nxt.text}")
+    if not _title_ok(title):
+        return None
+    return _Hit(
+        line.page,
+        number,
+        title,
+        line.y,
+        max(line.size, nxt.size),
+        line.page_height,
+    )
+
+
+def _split_title_ok(text: str) -> bool:
+    s = text.strip()
+    if not s or _LEADERS.search(s):
+        return False
+    if not _SPLIT_TITLE_MIN <= len(s) <= _SPLIT_TITLE_MAX:
+        return False
+    if s.endswith((".", "。", ",", "，", ";", "；", "!", "？", "?")):
+        return False
+    if s.isdigit():
+        return False
+    if not re.match(r"^[A-ZÀ-Þ\u4e00-\u9fff]", s):
+        return False
+    if _CN_HEADING.match(s) or _CHAPTER_HEADING.match(s) or _NUM_HEADING.match(s):
+        return False
+    return True
 
 
 def _parse_heading_line(line: _Line) -> _Hit | None:
@@ -531,6 +569,27 @@ def _first_hit_per_number(hits: list[_Hit]) -> list[_Hit]:
     for hit in sorted(hits, key=lambda h: (h.page, h.y)):
         by_num.setdefault(hit.number, hit)
     return sorted(by_num.values(), key=lambda h: (h.page, h.y))
+
+
+def _drop_number_regressions(hits: list[_Hit]) -> list[_Hit]:
+    """Keep strictly increasing chapter numbers in document order; drop regressions."""
+    kept: list[_Hit] = []
+    last = 0
+    for hit in sorted(hits, key=lambda h: (h.page, h.y)):
+        if hit.number > last:
+            kept.append(hit)
+            last = hit.number
+    return kept
+
+
+def _append_numbering_gap_warnings(hits: list[_Hit], warnings: list[str]) -> None:
+    """Record skipped numbers. Do not invent the missing chapters."""
+    ordered = sorted(hits, key=lambda h: (h.page, h.y))
+    for prev, cur in zip(ordered, ordered[1:]):
+        if cur.number > prev.number + 1:
+            warnings.append(
+                f"chapter numbering gap: {prev.number} -> {cur.number}"
+            )
 
 
 def _hits_to_chapters(

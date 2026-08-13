@@ -62,6 +62,7 @@ def split_by_chapters(pdf_path: Path, out_dir: Path, chapters: dict) -> dict:
                     "src_pages": [start, end],
                     "pdf_path": str(pdf_out),
                     "page_count": page_count,
+                    "page_offset": start - 1,
                 }
             )
     finally:
