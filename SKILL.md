@@ -41,6 +41,8 @@ Books contain crystallized expertise: frameworks, principles, and techniques tha
 
 For technical PDFs, extraction prefers the offline `book-to-skill-pdf2md` bundle (`document.md` + IR + quality report). Details, hard gates, teachers, and optimizer rules live in [`references/pdf-workflow.md`](references/pdf-workflow.md) — keep this file short.
 
+Figures and tables come out of that bundle as assets plus OCR labels, not prose. To turn them into natural language, run the export → look at images → merge loop in [`references/pdf2md-describe.md`](references/pdf2md-describe.md). Conversion itself stays offline; only that loop needs a host that can read images.
+
 ---
 
 ## Modes of Operation
