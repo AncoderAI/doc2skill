@@ -223,3 +223,111 @@ def validate_ir_dict(data: Dict[str, Any]) -> List[str]:
         if "block_id" not in b or "page" not in b:
             errors.append(f"blocks[{i}] missing block_id/page")
     return errors
+
+
+def _bbox_from_json(value: Any) -> Optional[BBox]:
+    if not value:
+        return None
+    return (float(value[0]), float(value[1]), float(value[2]), float(value[3]))
+
+
+def table_block_from_dict(data: Dict[str, Any]) -> TableBlock:
+    cells = [
+        TableCell(
+            text=c.get("text", ""),
+            row=int(c.get("row", 0)),
+            col=int(c.get("col", 0)),
+            rowspan=int(c.get("rowspan", 1)),
+            colspan=int(c.get("colspan", 1)),
+            is_header=bool(c.get("is_header", False)),
+            unit=c.get("unit"),
+        )
+        for c in (data.get("cells") or [])
+    ]
+    return TableBlock(
+        rows=int(data.get("rows", 0)),
+        cols=int(data.get("cols", 0)),
+        cells=cells,
+        header_rows=int(data.get("header_rows", 1)),
+        caption=data.get("caption"),
+        footnotes=list(data.get("footnotes") or []),
+        bbox=_bbox_from_json(data.get("bbox")),
+        has_spans=bool(data.get("has_spans", False)),
+    )
+
+
+def figure_block_from_dict(data: Dict[str, Any]) -> FigureBlock:
+    return FigureBlock(
+        asset_path=data.get("asset_path") or "",
+        category=data.get("category") or "unknown",
+        caption=data.get("caption"),
+        ocr_labels=list(data.get("ocr_labels") or []),
+        description=data.get("description"),
+        entities=list(data.get("entities") or []),
+        relations=list(data.get("relations") or []),
+        chart_data=data.get("chart_data"),
+        bbox=_bbox_from_json(data.get("bbox")),
+        round_trip=data.get("round_trip") or "not_applicable",
+    )
+
+
+def formula_block_from_dict(data: Dict[str, Any]) -> FormulaBlock:
+    return FormulaBlock(
+        latex=data.get("latex"),
+        tokens=list(data.get("tokens") or []),
+        confidence=float(data.get("confidence") or 0.0),
+        asset_path=data.get("asset_path"),
+        bbox=_bbox_from_json(data.get("bbox")),
+        failed=bool(data.get("failed", False)),
+        failure_reason=data.get("failure_reason"),
+    )
+
+
+def block_from_dict(data: Dict[str, Any]) -> Block:
+    return Block(
+        block_id=data["block_id"],
+        type=data["type"] if isinstance(data["type"], BlockType) else BlockType(data["type"]),
+        page=int(data["page"]),
+        text=data.get("text") or "",
+        level=data.get("level"),
+        bbox=_bbox_from_json(data.get("bbox")),
+        table=table_block_from_dict(data["table"]) if data.get("table") else None,
+        figure=figure_block_from_dict(data["figure"]) if data.get("figure") else None,
+        formula=formula_block_from_dict(data["formula"]) if data.get("formula") else None,
+        meta=dict(data.get("meta") or {}),
+    )
+
+
+def page_info_from_dict(data: Dict[str, Any]) -> PageInfo:
+    page_type = data.get("page_type", PageType.NATIVE_TEXT)
+    if not isinstance(page_type, PageType):
+        page_type = PageType(page_type)
+    return PageInfo(
+        page=int(data["page"]),
+        width=float(data.get("width") or 0.0),
+        height=float(data.get("height") or 0.0),
+        rotation=int(data.get("rotation") or 0),
+        page_type=page_type,
+        text_layer_chars=int(data.get("text_layer_chars") or 0),
+        ocr_chars=int(data.get("ocr_chars") or 0),
+        force_ocr=bool(data.get("force_ocr", False)),
+    )
+
+
+def document_ir_from_dict(data: Dict[str, Any]) -> DocumentIR:
+    return DocumentIR(
+        schema_version=data.get("schema_version") or SCHEMA_VERSION,
+        source_path=data.get("source_path") or "",
+        source_sha256=data.get("source_sha256") or "",
+        page_count=int(data.get("page_count") or 0),
+        pages=[page_info_from_dict(p) for p in (data.get("pages") or [])],
+        blocks=[block_from_dict(b) for b in (data.get("blocks") or [])],
+        warnings=list(data.get("warnings") or []),
+        profile=data.get("profile") or "auto",
+        engine=data.get("engine") or "local",
+    )
+
+
+def load_document_ir(path: Union[str, Path]) -> DocumentIR:
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    return document_ir_from_dict(data)

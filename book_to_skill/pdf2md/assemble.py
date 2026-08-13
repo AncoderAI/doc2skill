@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from .ir import Block, BlockType, DocumentIR
 from .tables import table_has_spans, table_to_html, table_to_markdown
@@ -33,6 +33,21 @@ def assemble_markdown(ir: DocumentIR) -> str:
     return "\n".join(parts).strip() + "\n"
 
 
+def _display_title(caption: Optional[str], fallback: str) -> str:
+    """Caption if present; otherwise a non-empty fallback (block_id). Never empty."""
+    if caption is not None and str(caption).strip():
+        return str(caption).strip()
+    return fallback
+
+
+def _nl_quote(kind_label: str, title: str, description: str) -> str:
+    """Markdown blockquote for a VLM figure/table description. Every line gets `> `."""
+    lines = [f"> **【{kind_label}：{title}】**"]
+    for line in description.splitlines() or [""]:
+        lines.append(f"> {line}")
+    return "\n".join(lines)
+
+
 def _render_block(block: Block) -> str:
     bid = f"<!-- block: {block.block_id} -->"
     if block.type == BlockType.HEADING:
@@ -46,10 +61,28 @@ def _render_block(block: Block) -> str:
             else table_to_markdown(block.table)
         )
         cap = f"\n*{block.table.caption}*" if block.table.caption else ""
-        return f"{bid}\n{body}{cap}"
+        rendered = f"{bid}\n{body}{cap}"
+        if block.meta.get("description_source") == "vlm":
+            desc = block.meta.get("description") or ""
+            if str(desc).strip():
+                title = _display_title(block.table.caption, block.block_id)
+                rendered = f"{rendered}\n\n{_nl_quote('表', title, desc)}"
+        return rendered
     if block.type == BlockType.FIGURE and block.figure is not None:
+        # No-VLM path must stay byte-identical: caption → description → "figure".
         alt = block.figure.caption or block.figure.description or "figure"
-        return f"{bid}\n![{alt}]({block.figure.asset_path})"
+        rendered = f"{bid}\n![{alt}]({block.figure.asset_path})"
+        if block.meta.get("description_source") == "vlm":
+            desc = block.figure.description or ""
+            if str(desc).strip():
+                # VLM: never put description into alt; no caption → block_id.
+                title = _display_title(block.figure.caption, block.block_id)
+                alt = " ".join(title.splitlines())
+                rendered = (
+                    f"{bid}\n![{alt}]({block.figure.asset_path})\n\n"
+                    f"{_nl_quote('图', title, desc)}"
+                )
+        return rendered
     if block.type == BlockType.FORMULA and block.formula is not None:
         if block.formula.failed or not block.formula.latex:
             img = ""

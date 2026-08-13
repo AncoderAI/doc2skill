@@ -43,19 +43,18 @@ def is_scorable_table(obj: Union[TableBlock, Dict[str, Any], None]) -> bool:
 
 def extract_tables_pdfplumber(pdf_path: str, page_index: int) -> List[TableBlock]:
     """Extract tables from a single 0-based page via pdfplumber."""
-    import pdfplumber
+    from .handles import get_plumber_page
 
     out: List[TableBlock] = []
-    with pdfplumber.open(pdf_path) as pdf:
-        if page_index < 0 or page_index >= len(pdf.pages):
-            return out
-        page = pdf.pages[page_index]
-        found = page.find_tables() or []
-        for t in found:
-            data = t.extract() or []
-            block = grid_to_table(data, bbox=tuple(t.bbox) if t.bbox else None)
-            if block is not None and is_scorable_table(block):
-                out.append(block)
+    page = get_plumber_page(pdf_path, page_index)
+    if page is None:
+        return out
+    found = page.find_tables() or []
+    for t in found:
+        data = t.extract() or []
+        block = grid_to_table(data, bbox=tuple(t.bbox) if t.bbox else None)
+        if block is not None and is_scorable_table(block):
+            out.append(block)
     return out
 
 

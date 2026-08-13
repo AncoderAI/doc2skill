@@ -16,25 +16,25 @@ def render_page(
     rotation: int = 0,
 ) -> Image.Image:
     """Render 0-based page_index to a PIL image at the given DPI."""
-    import pypdfium2 as pdfium
+    from .handles import get_pdfium
 
-    doc = pdfium.PdfDocument(str(pdf_path))
+    doc = get_pdfium(pdf_path)
+    page = doc[page_index]
     try:
-        page = doc[page_index]
         scale = dpi / 72.0
         bitmap = page.render(scale=scale, rotation=rotation)
         return bitmap.to_pil()
     finally:
-        doc.close()
+        page.close()
 
 
 def page_size(
     pdf_path: Union[str, Path], page_index: int
 ) -> Tuple[float, float, int]:
     """Return (width_pt, height_pt, rotate_deg) for 0-based page."""
-    from pypdf import PdfReader
+    from .handles import get_pypdf
 
-    reader = PdfReader(str(pdf_path))
+    reader = get_pypdf(pdf_path)
     page = reader.pages[page_index]
     box = page.mediabox
     width = float(box.width)
