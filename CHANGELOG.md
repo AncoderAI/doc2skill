@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0-beta.6] - 2026-08-13
+
+### Added
+- **Figure and table descriptions in natural language, handed off offline.** Figures used to
+  render as a bare `![alt](path)`, and the only "description" was an OCR-label splice
+  (`Labels: a; b`); `FigureBlock` already had `description` / `entities` / `relations` /
+  `chart_data` / `round_trip` and never populated them. `describe-export` emits one JSONL
+  record per figure (asset, caption, OCR labels, same-page context), a multimodal host writes
+  descriptions, and `describe-merge` writes them back and reassembles `document.md`. The
+  conversion itself stays offline — `describe.py` imports no network library and `net_guard`
+  is untouched. Rejection is fail-closed: an unknown `block_id`, a blank description, or a
+  `round_trip` outside `{reproducible, partial, not_reproducible}` is recorded and left
+  pending, so a failed figure is retried next round instead of being marked done. Only
+  `meta.description_source == "vlm"` renders as a blockquote, so an OCR splice can never pass
+  itself off as prose. Protocol: `references/pdf2md-describe.md`.
+- **Batched, resumable description runs.** `describe-status` reports coverage read-only;
+  `describe-export --pending-only --limit N` bounds what enters a multimodal context, which is
+  the one stage in this pipeline where context length actually binds. Verified on a real
+  19-figure range: 5+5+5+4, then an empty batch ends the loop.
+- **Chapter detection** (`chapters`) degrading `toc` → `heading` → `none`. Measured on four
+  real documents, naive detection fails badly: a bare heading regex hits 169 times in a book
+  with 13 real chapters (the rest are running headers), and one embedded outline puts 134 of
+  140 entries at level 1 starting at 1.5.1. Embedded outlines are validated before use, a
+  title repeating at the same layout position on ≥3 pages is a running header, and a page
+  listing ≥3 chapter titles is the table of contents. Standards documents that split the
+  clause number and title across two mid-page lines are matched by pairing them, guarded by
+  number monotonicity and a recorded warning on gaps. Detecting nothing is a legal result: a
+  154-page scan whose only text is a repeating watermark returns `source: "none"` and zero
+  chapters rather than inventing one that spans the book.
+- **`split`** writes per-chapter PDFs, and nothing at all when no chapters were detected.
+- **`convert --page-offset N`**, so a chapter split into its own PDF still reports real book
+  page numbers instead of restarting at 1.
+
+### Fixed
+- **Converting part of a PDF no longer costs time proportional to the part you skipped.**
+  `extract_tables_pdfplumber` and `detect_raster_figures` reopened the whole document per page
+  and bounds-checked with `len(pdf.pages)`, a property that materializes every page object;
+  the same reopen-per-page pattern was in `_extract_native_text`, `_embedded_image_count`,
+  `render_page` and `page_size`. Cost was O(pages_processed × document_pages). `handles.py`
+  now caches one handle set per `(resolved path, mtime_ns, size)`, walks the page tree once,
+  and builds pages only for requested indices; `convert_pdf` releases everything in `finally`,
+  including on the exception path. Measured on a 26-page range of a 220-page book:
+  **244.62 s → 9.90 s**, with `document.md` and `document.ir.json` byte-identical.
+
+### Notes
+- Splitting a book into per-chapter PDFs before converting is available but is not the
+  recommended default. Measured against `convert --pages` on the same chapter, content is
+  byte-identical; the 11.6× speed advantage it appeared to have came entirely from shrinking
+  the document the O(N×M) defect scaled with, and disappears now that the defect is fixed.
+  Splitting also restarts page anchors at 1 (recoverable with `--page-offset`) and, where
+  chapter detection misses a heading, produces a file whose name does not match its contents.
+
 ## [1.5.0-beta.5] - 2026-08-13
 
 ### Changed
