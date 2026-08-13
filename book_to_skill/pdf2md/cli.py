@@ -66,6 +66,37 @@ def main(argv: list[str] | None = None) -> int:
     p_opt.add_argument("--budget", type=int, default=8)
     p_opt.add_argument("--auto-commit", action="store_true")
 
+    p_exp = sub.add_parser(
+        "describe-export", help="Export figure/table describe requests as JSONL"
+    )
+    p_exp.add_argument("--bundle", required=True, type=str)
+    p_exp.add_argument("--out", type=str, default=None)
+    p_exp.add_argument("--include-tables", action="store_true")
+    p_exp.add_argument(
+        "--pending-only",
+        action="store_true",
+        help="Skip blocks already described (description_source=vlm)",
+    )
+    p_exp.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Export at most N records after (page, block_id) sort",
+    )
+
+    p_stat = sub.add_parser(
+        "describe-status", help="Show figure/table describe progress (read-only)"
+    )
+    p_stat.add_argument("--bundle", required=True, type=str)
+    p_stat.add_argument("--json", action="store_true", help="Machine-readable JSON")
+
+    p_mer = sub.add_parser(
+        "describe-merge", help="Merge VLM descriptions back into a pdf2md bundle"
+    )
+    p_mer.add_argument("--bundle", required=True, type=str)
+    p_mer.add_argument("--descriptions", required=True, type=str)
+    p_mer.add_argument("--strict", action="store_true")
+
     args = parser.parse_args(argv)
 
     if args.cmd == "doctor":
@@ -143,6 +174,50 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps(result, indent=2, ensure_ascii=False))
         return 0 if result.get("ok") else 1
+
+    if args.cmd == "describe-export":
+        from .describe import export_requests, write_jsonl
+
+        bundle = Path(args.bundle)
+        records = export_requests(
+            bundle,
+            include_tables=args.include_tables,
+            pending_only=args.pending_only,
+            limit=args.limit,
+        )
+        out = Path(args.out) if args.out else bundle / "describe-requests.jsonl"
+        write_jsonl(out, records)
+        return 0
+
+    if args.cmd == "describe-status":
+        from .describe import describe_status
+
+        status = describe_status(Path(args.bundle))
+        if args.json:
+            print(json.dumps(status, indent=2, ensure_ascii=False))
+        else:
+            print(
+                f"figures: {status['described_figures']}/{status['total_figures']} "
+                f"described ({status['pending_figures']} pending)"
+            )
+            print(
+                f"tables:  {status['described_tables']}/{status['total_tables']} "
+                f"described ({status['pending_tables']} pending)"
+            )
+            print(f"done: {str(status['done']).lower()}")
+        return 0
+
+    if args.cmd == "describe-merge":
+        from .describe import merge_descriptions, read_jsonl
+
+        bundle = Path(args.bundle)
+        records = read_jsonl(Path(args.descriptions))
+        report = merge_descriptions(bundle, records, strict=args.strict)
+        print(json.dumps(report, ensure_ascii=False))
+        rejected = report.get("rejected") or {}
+        if args.strict and (report.get("unknown_ids") or any(rejected.values())):
+            return 2
+        return 0
 
     return 1
 
