@@ -371,34 +371,31 @@ def detect_vector_figures(
 
     Product extraction path — deterministic geometry only (no layout ML).
     """
-    import fitz
+    from .handles import get_fitz
 
     cands: List[FigureCandidate] = []
-    doc = fitz.open(pdf_path)
-    try:
-        if page_index < 0 or page_index >= len(doc):
-            return cands
-        page = doc[page_index]
-        # Prefer mediabox height for PDF-space conversion
-        page_h_m = float(page.rect.height) or page_h
-        page_w_m = float(page.rect.width) or page_w
-        primitives: List[BBox] = []
-        dropped_seps = 0
-        for d in page.get_drawings() or []:
-            rect = d.get("rect")
-            if rect is None:
-                continue
-            bb = _mupdf_rect_to_pdf_bbox(rect, page_h_m)
-            if bb is None:
-                continue
-            if _is_separator(bb, page_w_m):
-                dropped_seps += 1
-                continue
-            if bbox_area(bb) < 1.0 and (bb[3] - bb[1]) <= 1.0:
-                continue
-            primitives.append(bb)
-    finally:
-        doc.close()
+    doc = get_fitz(pdf_path)
+    if page_index < 0 or page_index >= len(doc):
+        return cands
+    page = doc[page_index]
+    # Prefer mediabox height for PDF-space conversion
+    page_h_m = float(page.rect.height) or page_h
+    page_w_m = float(page.rect.width) or page_w
+    primitives: List[BBox] = []
+    dropped_seps = 0
+    for d in page.get_drawings() or []:
+        rect = d.get("rect")
+        if rect is None:
+            continue
+        bb = _mupdf_rect_to_pdf_bbox(rect, page_h_m)
+        if bb is None:
+            continue
+        if _is_separator(bb, page_w_m):
+            dropped_seps += 1
+            continue
+        if bbox_area(bb) < 1.0 and (bb[3] - bb[1]) <= 1.0:
+            continue
+        primitives.append(bb)
     clusters = _cluster_bboxes(primitives, VECTOR_CLUSTER_GAP_PT)
     for cl in clusters:
         cand = FigureCandidate(bbox=cl, route="vector", page=page_no)
@@ -426,39 +423,38 @@ def detect_raster_figures(
     page_h: float,
 ) -> List[FigureCandidate]:
     """Embedded XObject images via pdfplumber; full-page / tiny dropped by gates."""
-    import pdfplumber
+    from .handles import get_plumber_page
 
     cands: List[FigureCandidate] = []
-    with pdfplumber.open(pdf_path) as pdf:
-        if page_index < 0 or page_index >= len(pdf.pages):
-            return cands
-        page = pdf.pages[page_index]
-        for im in page.images or []:
-            bb = _obj_bbox(im)
-            if bb is None:
-                continue
-            src = im.get("srcsize") or ()
-            cand = FigureCandidate(
-                bbox=bb,
-                route="raster",
-                page=page_no,
-                extra={
-                    "srcsize": list(src) if src else [],
-                    "name": im.get("name"),
-                },
-            )
-            # Pixel-size floor: IEC logos are 116×116 — below any real figure.
-            if (
-                isinstance(src, (list, tuple))
-                and len(src) >= 2
-                and max(int(src[0]), int(src[1])) <= 128
-            ):
-                cand.dropped = "too_small"
-                cand.extra["area_ratio"] = bbox_area(bb) / max(page_w * page_h, 1.0)
-                cands.append(cand)
-                continue
-            apply_area_gates(cand, page_w, page_h)
+    page = get_plumber_page(pdf_path, page_index)
+    if page is None:
+        return cands
+    for im in page.images or []:
+        bb = _obj_bbox(im)
+        if bb is None:
+            continue
+        src = im.get("srcsize") or ()
+        cand = FigureCandidate(
+            bbox=bb,
+            route="raster",
+            page=page_no,
+            extra={
+                "srcsize": list(src) if src else [],
+                "name": im.get("name"),
+            },
+        )
+        # Pixel-size floor: IEC logos are 116×116 — below any real figure.
+        if (
+            isinstance(src, (list, tuple))
+            and len(src) >= 2
+            and max(int(src[0]), int(src[1])) <= 128
+        ):
+            cand.dropped = "too_small"
+            cand.extra["area_ratio"] = bbox_area(bb) / max(page_w * page_h, 1.0)
             cands.append(cand)
+            continue
+        apply_area_gates(cand, page_w, page_h)
+        cands.append(cand)
     return cands
 
 

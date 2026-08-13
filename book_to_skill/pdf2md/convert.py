@@ -17,6 +17,7 @@ from .classify import (
     repeated_line_candidates,
     strip_watermarks,
 )
+from .handles import close_all, get_plumber_page, get_pypdf, page_count as cached_page_count
 from .figures import (
     crop_and_save,
     detect_formula_lines,
@@ -76,17 +77,13 @@ def _tool_versions() -> Dict[str, Any]:
 
 
 def _extract_native_text(pdf_path: str, page_index: int) -> str:
-    from pypdf import PdfReader
-
-    reader = PdfReader(pdf_path)
+    reader = get_pypdf(pdf_path)
     page = reader.pages[page_index]
     return page.extract_text() or ""
 
 
 def _embedded_image_count(pdf_path: str, page_index: int) -> int:
-    from pypdf import PdfReader
-
-    reader = PdfReader(pdf_path)
+    reader = get_pypdf(pdf_path)
     page = reader.pages[page_index]
     try:
         resources = page.get("/Resources")
@@ -108,9 +105,7 @@ def _embedded_image_count(pdf_path: str, page_index: int) -> int:
 
 
 def _page_count(pdf_path: str) -> int:
-    from pypdf import PdfReader
-
-    return len(PdfReader(pdf_path).pages)
+    return cached_page_count(pdf_path)
 
 
 def _text_to_blocks(
@@ -181,6 +176,22 @@ def convert_pdf(
     if not pdf_path.is_file():
         raise FileNotFoundError(str(pdf_path))
 
+    try:
+        return _convert_pdf_body(
+            pdf_path, out, profile, strict, profile_overrides, t0
+        )
+    finally:
+        close_all()
+
+
+def _convert_pdf_body(
+    pdf_path: Path,
+    out: Path,
+    profile: str,
+    strict: bool,
+    profile_overrides: Optional[Dict[str, Any]],
+    t0: float,
+) -> Dict[str, Any]:
     prof = resolve_profile(profile, profile_overrides)
     if not prof.ocr_lang or prof.ocr_lang == "eng":
         # auto-pick corpus language defaults when still default eng
@@ -811,14 +822,13 @@ def _line_items_for_formulas(
     items = []
     if page_type in {PageType.NATIVE_TEXT, PageType.MIXED} and not force_ocr:
         try:
-            import pdfplumber
-
-            with pdfplumber.open(pdf_path) as pdf:
-                page = pdf.pages[page_index]
-                # Prefer extract_text lines — same grain as anchors.formula_lines.
-                # Word-top clustering splits λ headers from "=0.024×D" bodies.
-                raw_text = page.extract_text() or ""
-                words = page.extract_words() or []
+            page = get_plumber_page(pdf_path, page_index)
+            if page is None:
+                raise IndexError(page_index)
+            # Prefer extract_text lines — same grain as anchors.formula_lines.
+            # Word-top clustering splits λ headers from "=0.024×D" bodies.
+            raw_text = page.extract_text() or ""
+            words = page.extract_words() or []
             for ln in raw_text.splitlines():
                 text = ln.strip()
                 if not text:
