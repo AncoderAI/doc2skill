@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0-beta.7] - 2026-08-14
+
+### Added
+- **Per-crop OCR into `FigureBlock.ocr_labels`, under the `accurate` profile.** A description
+  is only as trustworthy as the evidence available to contradict it, and until now the only
+  signal about a crop came from the same model writing the description — `convert` passed
+  `ocr_text=""` unconditionally, so a real 96-page document reported 0 of 132 figures with
+  labels. Local tesseract now runs on each saved crop, so a later check can ask whether a
+  claimed label appears in text the figure actually carries. `fast` leaves it off: per-crop
+  OCR gives back most of the convert budget the O(N×M) fix recovered. A missing tesseract
+  records one warning per document and leaves labels empty; a tesseract that is present and
+  fails still raises, since that is a failure, not an absence of text. Measured on a 7-page
+  range: `accurate` 11/11 crops carry labels, `fast` 0/11.
+- **`verdict: "not_a_figure"` in describe responses.** Figure detection keeps text callouts,
+  formula boxes and whole-page blobs; the side that can actually see the crop may now rule it
+  out, and `describe-merge` removes the block, deletes its asset, and appends an audit line to
+  `removed-blocks.jsonl` (`block_id / page / asset_path / reason / model / removed_at`).
+  Removal is irreversible, so it is fail-closed: only an exact `not_a_figure` carrying a
+  non-empty `reason` removes anything. A missing reason, an unknown verdict value, a case
+  variant, or a block that was already described is recorded under `rejected` and left
+  untouched. Re-sending a removal for an already-removed block lands in `unknown_ids` rather
+  than failing, and repeated merges leave `document.md` byte-identical. With no verdict in the
+  batch, output is unchanged. The protocol says to answer `figure` when unsure — keeping a bad
+  crop costs a wasted description, deleting a good one loses the figure.
+
+### Notes
+- Four geometric approaches to dropping non-figure crops were measured and none worked. A
+  text-density gate took figures from 132 to 230 and a 96-page convert from 16.2s to 32.8s
+  (reverted). "Has bezier curves" fails because flowcharts have none. Dropping by coverage
+  from detected tables cannot separate an all-tables blob (38%) from the page holding a real
+  chart (56%). Excluding primitives already covered by tables or body text before clustering
+  took a real chart page from 660 primitives to 1. The blobs hold a chart *and* tables at
+  once, so no classifier can be right about them and geometry cannot segment them — which is
+  why the judgement moved to the side that can see the image. Per-page primitive counts and
+  the full postmortem are in `tests/pdf2md/TASK_P10.md`.
+
 ## [1.5.0-beta.6] - 2026-08-13
 
 ### Added
