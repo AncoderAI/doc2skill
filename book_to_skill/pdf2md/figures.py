@@ -90,6 +90,26 @@ def crop_and_save(
     return dest
 
 
+def ocr_figure_asset(
+    image: Image.Image,
+    *,
+    lang: str,
+    psm: int,
+    dpi: int,
+) -> Tuple[str, Optional[str]]:
+    """OCR one figure crop. Returns (text, warning_or_none).
+
+    Tesseract missing → empty text + warning (does not raise). A tesseract
+    failure while the binary is present still raises — that is not a silent
+    skip.
+    """
+    from .ocr import ocr_image, tesseract_available
+
+    if not tesseract_available():
+        return "", "figure OCR skipped: tesseract not available"
+    return ocr_image(image, lang=lang, psm=psm, dpi=dpi), None
+
+
 def figure_from_image(
     asset_path: str,
     *,

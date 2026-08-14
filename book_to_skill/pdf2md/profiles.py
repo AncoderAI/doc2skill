@@ -24,6 +24,11 @@ class ConvertProfile:
     enable_figures: bool = True
     enable_charts: bool = True
     enable_ocr_tables: bool = False  # scanned-page OCR word-box → projection grid tables
+    # Per-crop tesseract on saved figure PNGs → FigureBlock.ocr_labels, the
+    # signal an external check needs to catch a description claiming a label
+    # the figure does not carry. Off in `fast`: P8 brought a 96-page convert to
+    # ~16s and per-figure OCR gives most of that back.
+    enable_figure_ocr: bool = False
     html_tables_on_span: bool = True
     figure_caption_prompt: str = (
         "Describe the figure briefly for retrieval; list visible labels."
@@ -58,6 +63,7 @@ PROFILES: Dict[str, ConvertProfile] = {
         enable_figures=True,
         enable_charts=True,
         enable_ocr_tables=True,
+        enable_figure_ocr=True,
         ocr_psm=3,
     ),
     "auto": ConvertProfile(name="auto"),

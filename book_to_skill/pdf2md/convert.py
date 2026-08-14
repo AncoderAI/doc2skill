@@ -29,6 +29,7 @@ from .figures import (
     formula_from_latex,
     image_fingerprint,
     is_solid_or_tiny,
+    ocr_figure_asset,
     parse_figures_from_markdown,
     parse_formulas_from_markdown,
 )
@@ -422,6 +423,8 @@ def _convert_local(
     formula_score_log: List[Dict[str, Any]] = []
     fingerprint_pages: Dict[str, List[int]] = {}
     kept_by_fp: Dict[str, List[Block]] = {}
+    # Warn once per document, not once per figure.
+    figure_ocr_warned = False
 
     for i in pages:
         page_no = i + 1 + page_offset
@@ -694,14 +697,30 @@ def _convert_local(
                 crop_img = _PILImage.open(out / asset_rel)
                 bad = is_solid_or_tiny(crop_img)
                 fp = image_fingerprint(crop_img)
-                crop_img.close()
                 if bad:
+                    crop_img.close()
                     cand.dropped = bad
                     entry["dropped"] = bad
                     entry["fingerprint"] = fp
                     figure_drop_log.append(entry)
                     (out / asset_rel).unlink(missing_ok=True)
                     continue
+
+                # Second, model-independent signal about this crop: what text
+                # a local OCR pass can actually read in it. An external check
+                # compares a description's claimed labels against this.
+                fig_ocr_text = ""
+                if prof.enable_figure_ocr:
+                    fig_ocr_text, ocr_warn = ocr_figure_asset(
+                        crop_img,
+                        lang=prof.ocr_lang,
+                        psm=prof.ocr_psm,
+                        dpi=prof.dpi,
+                    )
+                    if ocr_warn and not figure_ocr_warned:
+                        ir.warnings.append(ocr_warn)
+                        figure_ocr_warned = True
+                crop_img.close()
 
                 # repeated decoration bookkeeping (finalize after all pages)
                 fingerprint_pages.setdefault(fp, []).append(page_no)
@@ -712,7 +731,7 @@ def _convert_local(
                 fblock = figure_from_image(
                     asset_rel,
                     bbox=cand.bbox,
-                    ocr_text="",
+                    ocr_text=fig_ocr_text,
                     prompt=prof.figure_caption_prompt,
                     caption=caption,
                 )
