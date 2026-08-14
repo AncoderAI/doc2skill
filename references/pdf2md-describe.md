@@ -95,6 +95,32 @@ python3 -m book_to_skill.pdf2md.cli <subcommand> ...
 - 不许一次把全书图片读进上下文。用 `--pending-only --limit`。
 - 不许在 Python 侧为「省事」伪造 description。本协议不改 `describe.py` 来编描述。
 - 空白 `description`、非法 `round_trip` 会被 merge 拒绝。写完后确认每条都有非空描述和三选一的 `round_trip`。
+- **拿不准就判 `figure`（保留）**。删错的代价远大于留错。`not_a_figure` 必须同时给出非空 `reason` 才会从 IR 删除；缺字段、字段非法、已经描述过的，merge 一律保留。
+
+---
+
+## `verdict` 判定（可选，两选一）
+
+看图的一方判断「这是不是一张图」。Python 只忠实执行判定并留痕，不做几何分类。
+
+| 值 | 含义 | merge 行为 |
+|---|---|---|
+| `figure`（或字段缺失） | 是图 | 走现有描述流程（`description` / `round_trip` 仍必填） |
+| `not_a_figure` | 不是图 | **从 IR 删除该 figure block 及其资产文件** |
+
+**不是图**：正文提示/警告框、纯公式框、表格或表格碎片、页眉页脚装饰、分隔线、整页混合内容（既不是单一图也无法单独描述）。
+
+**是图**：流程图、框图、曲线/柱状/散点图、示意图、照片、电路图，**即使它没有 caption、即使它全由直线和矩形构成**。
+
+**拿不准就判 `figure`**。不要删。
+
+`not_a_figure` 时 `description` 不再必填，但 **`reason` 必填且非空**。没有理由就是没有依据，merge 保留不删，记入 `rejected.missing_reason`。
+
+其它 fail-closed 规则：
+
+- `verdict` 不是上述两值 → `rejected.bad_verdict`，不删不改
+- 已经被描述过（`description_source == "vlm"`）又收到 `not_a_figure` → `rejected.already_described`，不删
+- 删除成功时追加写入 `<bundle>/removed-blocks.jsonl`，每行 `{block_id, page, asset_path, reason, model, removed_at}`。这是事后追查「为什么这张图没了」的唯一凭据。
 
 ---
 
@@ -108,6 +134,14 @@ python3 -m book_to_skill.pdf2md.cli <subcommand> ...
  "chart_data":null,"model":"<看图的模型名>","generated_at":"2026-08-13T12:00:00Z"}
 ```
 
+判定某条不是图时（`description` 可省略）：
+
+```json
+{"block_id":"p0052-figure-0003", "verdict":"not_a_figure",
+ "reason":"正文提示框：CAUTION！The life expectancy is limited！",
+ "model":"...","generated_at":"..."}
+```
+
 字段约定：
 
 - `block_id`：从 batch.jsonl 原样复制，不要改。
@@ -118,8 +152,9 @@ python3 -m book_to_skill.pdf2md.cli <subcommand> ...
 - `chart_data`：仅当图是数据图表且你**读出了**可结构化的点/系列时填写；否则 `null`。不要把看不清的刻度编成数字。
 - `model`：实际在看图的模型名。
 - `generated_at`：UTC ISO-8601。
+- `verdict`（可选）：`figure` | `not_a_figure`。缺省等于 `figure`。见上文判定表。
 
-merge 成功的标志是 IR 里该 block 的 `meta.description_source == "vlm"`。之后 `--pending-only` 会跳过它。失败的记录进 `describe-report.json` 的 `unknown_ids` / `rejected`，不会被标成已描述——下一轮 status 仍会看到它们。
+merge 成功描述的标志是 IR 里该 block 的 `meta.description_source == "vlm"`。之后 `--pending-only` 会跳过它。失败的记录进 `describe-report.json` 的 `unknown_ids` / `rejected`，不会被标成已描述——下一轮 status 仍会看到它们。`not_a_figure` 删除成功后 `total_figures` 减少，该 block 不再出现在 `--pending-only` 导出里。
 
 ---
 
@@ -130,7 +165,7 @@ merge 成功的标志是 IR 里该 block 的 `meta.description_source == "vlm"`�
 1. 读记录：`block_id`、`kind`、`asset_path`、`caption`、`ocr_labels`、`category`、`context_*`。
 2. 打开图片。打不开或文件损坏 → `not_reproducible`，描述写「asset 无法打开：…」。
 3. 先看图，再决定要不要看 caption / OCR / 上下文。
-4. 按上面的质量规则写 `description`，按三级表选 `round_trip`。
+4. 按上面的质量规则写 `description`，按三级表选 `round_trip`。若判定不是图：填 `verdict: not_a_figure` 和 **非空** `reason`，不要编一段假描述；拿不准则当作图来写。
 5. 填 `entities` / `relations` / `chart_data`。
 6. 把这一行追加到 `responses.jsonl`。不要改已经 merge 过的文件里的旧行。
 

@@ -34,3 +34,8 @@ description: "Describe figures and tables in a pdf2md bundle by looking at image
 - **控量必须改 `--limit` 数字**，不许靠自己少读几行 JSONL 假装控量。
 - **不许用 Mermaid `table` 块**（Cursor/VS Code/GitHub 内置 Mermaid 不支持，预览报 Syntax Error）。
 - 空白 `description` 会被 merge 拒绝。被拒的记录不会被标成已描述，下一轮 `--pending-only` 仍会捞到它们。
+- **`verdict` 只有两个合法值**：`figure`（或缺省）走描述；`not_a_figure` 且 **非空 `reason`** 才从 IR 删除该 figure 及其资产。缺字段、非法值、已描述过 → **保留**，记入 `rejected`。
+- **拿不准就判 `figure`**。删错的代价远大于留错。
+- **不是图**：正文提示/警告框、纯公式框、表格或表格碎片、页眉页脚装饰、分隔线、整页混合内容。
+- **是图**：流程图、框图、曲线/柱状/散点图、示意图、照片、电路图——即使没有 caption、即使全由直线和矩形构成。
+- 删除会追加 `<bundle>/removed-blocks.jsonl`（`block_id/page/asset_path/reason/model/removed_at`）。没有这条记录就没有删除依据。

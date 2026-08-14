@@ -8,16 +8,19 @@ FigureBlock fields (description / entities / relations / chart_data / round_trip
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .assemble import assemble_markdown
-from .ir import Block, BlockType, load_document_ir
+from .ir import Block, BlockType, DocumentIR, load_document_ir
 from .tables import table_has_spans, table_to_html, table_to_markdown
 
 CONTEXT_LIMIT = 400
 VALID_ROUND_TRIP = frozenset({"reproducible", "partial", "not_reproducible"})
+VALID_VERDICTS = frozenset({"figure", "not_a_figure"})
 APPLY_TYPES = frozenset({BlockType.FIGURE, BlockType.TABLE})
+VERDICT_REJECT_KEYS = ("bad_verdict", "missing_reason", "already_described")
 
 
 def export_requests(
@@ -92,6 +95,10 @@ def merge_descriptions(
     """Write VLM descriptions back onto IR FigureBlock fields and reassemble markdown.
 
     ``strict`` is for the caller (CLI exit 2 when unknown_ids / rejected are nonempty).
+
+    Optional ``verdict`` on a record is fail-closed: only ``not_a_figure`` plus a
+    non-empty ``reason`` removes a figure block. Missing/illegal verdict, empty
+    reason, or an already-described block keeps the figure and records why.
     """
     bundle_dir = Path(bundle_dir)
     ir = load_document_ir(bundle_dir / "document.ir.json")
@@ -99,10 +106,16 @@ def merge_descriptions(
 
     unknown_ids: List[str] = []
     rejected = {"empty": 0, "bad_round_trip": 0, "wrong_type": 0}
+    if any("verdict" in rec for rec in records):
+        for key in VERDICT_REJECT_KEYS:
+            rejected[key] = 0
     described = 0
     described_figures = 0
     described_tables = 0
     skipped_already_described = 0
+    removed_block_ids: List[str] = []
+    removed_rows: List[Dict[str, Any]] = []
+    removed_at = _utc_now_iso()
 
     for rec in records:
         block_id = rec.get("block_id")
@@ -110,6 +123,24 @@ def merge_descriptions(
         if block is None:
             unknown_ids.append(block_id if block_id else "")
             continue
+        if "verdict" in rec:
+            verdict = rec.get("verdict")
+            if verdict not in VALID_VERDICTS:
+                rejected["bad_verdict"] += 1
+                continue
+            if verdict == "not_a_figure":
+                _remove_not_a_figure(
+                    bundle_dir,
+                    ir,
+                    by_id,
+                    block,
+                    rec,
+                    rejected=rejected,
+                    removed_block_ids=removed_block_ids,
+                    removed_rows=removed_rows,
+                    removed_at=removed_at,
+                )
+                continue
         description = rec.get("description")
         if description is None or not str(description).strip():
             rejected["empty"] += 1
@@ -147,8 +178,12 @@ def merge_descriptions(
         "unknown_ids": unknown_ids,
         "rejected": rejected,
         "skipped_already_described": skipped_already_described,
+        "removed_not_a_figure": len(removed_block_ids),
+        "removed_block_ids": list(removed_block_ids),
     }
 
+    if removed_rows:
+        _append_jsonl(bundle_dir / "removed-blocks.jsonl", removed_rows)
     md = assemble_markdown(ir)
     (bundle_dir / "document.md").write_text(md, encoding="utf-8")
     ir.to_json(bundle_dir / "document.ir.json")
@@ -157,6 +192,69 @@ def merge_descriptions(
         encoding="utf-8",
     )
     return report
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _append_jsonl(path: Path, records: list[dict]) -> None:
+    dest = Path(path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with dest.open("a", encoding="utf-8") as handle:
+        for rec in records:
+            handle.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+
+def _unlink_bundle_asset(bundle_dir: Path, asset_path: str) -> None:
+    raw = (asset_path or "").strip()
+    if not raw:
+        return
+    path = Path(raw)
+    resolved = path.resolve() if path.is_absolute() else (bundle_dir / path).resolve()
+    resolved.relative_to(bundle_dir.resolve())
+    if resolved.is_file():
+        resolved.unlink()
+
+
+def _remove_not_a_figure(
+    bundle_dir: Path,
+    ir: DocumentIR,
+    by_id: Dict[str, Block],
+    block: Block,
+    rec: Dict[str, Any],
+    *,
+    rejected: Dict[str, int],
+    removed_block_ids: List[str],
+    removed_rows: List[Dict[str, Any]],
+    removed_at: str,
+) -> None:
+    """Fail-closed deletion. Keep the block unless every gate passes."""
+    if (block.meta or {}).get("description_source") == "vlm":
+        rejected["already_described"] += 1
+        return
+    reason = rec.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        rejected["missing_reason"] += 1
+        return
+    if block.type != BlockType.FIGURE or block.figure is None:
+        rejected["wrong_type"] += 1
+        return
+    asset_path = _bundle_relative_asset(bundle_dir, block.figure.asset_path)
+    _unlink_bundle_asset(bundle_dir, asset_path)
+    ir.blocks = [item for item in ir.blocks if item.block_id != block.block_id]
+    del by_id[block.block_id]
+    removed_block_ids.append(block.block_id)
+    removed_rows.append(
+        {
+            "block_id": block.block_id,
+            "page": block.page,
+            "asset_path": asset_path,
+            "reason": reason,
+            "model": rec.get("model"),
+            "removed_at": removed_at,
+        }
+    )
 
 
 def read_jsonl(path: Path) -> list[dict]:

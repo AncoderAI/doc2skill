@@ -654,3 +654,252 @@ def test_describe_status_cli_json(tmp_path, capsys):
     assert payload["total_figures"] == 1
     assert payload["pending_figures"] == 1
     assert payload["done"] is False
+
+
+def _not_a_figure_record(block_id: str, reason: str | None, **extra) -> dict:
+    rec = {
+        "block_id": block_id,
+        "verdict": "not_a_figure",
+        "reason": reason,
+        "model": "test-vlm",
+        "generated_at": "2026-08-13T00:00:00Z",
+    }
+    rec.update(extra)
+    return rec
+
+
+def test_not_a_figure_removes_block_asset_and_anchor(tmp_path):
+    fig_keep = "p0001-fig-0000"
+    fig_drop = "p0001-fig-0001"
+    keep_asset = "assets/figures/p0001_fig0000.png"
+    drop_asset = "assets/figures/p0001_fig0001.png"
+    bundle = _make_bundle(
+        tmp_path,
+        [
+            _figure(fig_keep, 1, asset_path=keep_asset),
+            _figure(fig_drop, 1, asset_path=drop_asset),
+        ],
+    )
+    assert (bundle / drop_asset).is_file()
+    report = merge_descriptions(
+        bundle,
+        [
+            _not_a_figure_record(
+                fig_drop,
+                "正文提示框：CAUTION！The life expectancy is limited！",
+            )
+        ],
+    )
+    assert report["removed_not_a_figure"] == 1
+    assert report["removed_block_ids"] == [fig_drop]
+    ir = load_document_ir(bundle / "document.ir.json")
+    ids = [b.block_id for b in ir.blocks]
+    assert fig_drop not in ids
+    assert fig_keep in ids
+    assert not (bundle / drop_asset).exists()
+    assert (bundle / keep_asset).is_file()
+    md = (bundle / "document.md").read_text(encoding="utf-8")
+    assert f"<!-- block: {fig_drop} -->" not in md
+    assert f"<!-- block: {fig_keep} -->" in md
+
+
+def test_not_a_figure_empty_reason_kept(tmp_path):
+    fig_id = "p0001-fig-0001"
+    asset = "assets/figures/p0001_fig0001.png"
+    bundle = _make_bundle(
+        tmp_path,
+        [_figure(fig_id, 1, asset_path=asset)],
+    )
+    original_md = (bundle / "document.md").read_bytes()
+    report = merge_descriptions(bundle, [_not_a_figure_record(fig_id, "")])
+    assert report["rejected"]["missing_reason"] == 1
+    assert report["removed_not_a_figure"] == 0
+    ir = load_document_ir(bundle / "document.ir.json")
+    assert any(b.block_id == fig_id for b in ir.blocks)
+    assert (bundle / asset).is_file()
+    assert (bundle / "document.md").read_bytes() == original_md
+    assert not (bundle / "removed-blocks.jsonl").exists()
+
+
+def test_illegal_verdict_rejected_block_kept(tmp_path):
+    fig_id = "p0001-fig-0001"
+    asset = "assets/figures/p0001_fig0001.png"
+    bundle = _make_bundle(
+        tmp_path,
+        [_figure(fig_id, 1, asset_path=asset)],
+    )
+    original_md = (bundle / "document.md").read_bytes()
+    rec = _vlm_record(fig_id, "这段描述绝不能写进去。", verdict="maybe")
+    report = merge_descriptions(bundle, [rec])
+    assert report["rejected"]["bad_verdict"] == 1
+    assert report["described"] == 0
+    assert report["removed_not_a_figure"] == 0
+    ir = load_document_ir(bundle / "document.ir.json")
+    fig = next(b for b in ir.blocks if b.block_id == fig_id)
+    assert fig.figure is not None
+    assert fig.figure.description is None
+    assert (bundle / asset).is_file()
+    assert (bundle / "document.md").read_bytes() == original_md
+
+
+def test_already_described_not_a_figure_kept(tmp_path):
+    fig_id = "p0001-fig-0001"
+    asset = "assets/figures/p0001_fig0001.png"
+    bundle = _make_bundle(
+        tmp_path,
+        [_figure(fig_id, 1, asset_path=asset)],
+    )
+    merge_descriptions(bundle, [_vlm_record(fig_id, "流程自左向右：输入经求解器后输出。")])
+    report = merge_descriptions(
+        bundle,
+        [_not_a_figure_record(fig_id, "正文提示框，但此图已经描述过。")],
+    )
+    assert report["rejected"]["already_described"] == 1
+    assert report["removed_not_a_figure"] == 0
+    ir = load_document_ir(bundle / "document.ir.json")
+    fig = next(b for b in ir.blocks if b.block_id == fig_id)
+    assert fig.meta.get("description_source") == "vlm"
+    assert fig.figure is not None
+    assert fig.figure.description == "流程自左向右：输入经求解器后输出。"
+    assert (bundle / asset).is_file()
+    md = (bundle / "document.md").read_text(encoding="utf-8")
+    assert f"<!-- block: {fig_id} -->" in md
+    assert "> **【图：图3-1 工作流示例】**" in md
+
+
+def test_removed_blocks_jsonl_fields(tmp_path):
+    fig_id = "p0001-fig-0001"
+    asset = "assets/figures/p0001_fig0001.png"
+    reason = "正文提示框：CAUTION！The life expectancy is limited！"
+    bundle = _make_bundle(
+        tmp_path,
+        [_figure(fig_id, 1, asset_path=asset, caption=None)],
+    )
+    merge_descriptions(
+        bundle,
+        [_not_a_figure_record(fig_id, reason, model="cursor-grok-4.6")],
+    )
+    path = bundle / "removed-blocks.jsonl"
+    assert path.is_file()
+    lines = [ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    assert len(lines) == 1
+    row = json.loads(lines[0])
+    for key in ("block_id", "page", "asset_path", "reason", "model", "removed_at"):
+        assert key in row
+        assert row[key] not in (None, "")
+    assert row["block_id"] == fig_id
+    assert row["page"] == 1
+    assert row["asset_path"] == asset
+    assert row["reason"] == reason
+    assert row["model"] == "cursor-grok-4.6"
+
+
+def test_status_and_pending_only_after_removal(tmp_path):
+    from book_to_skill.pdf2md.describe import describe_status
+
+    fig_keep = "p0001-fig-0000"
+    fig_drop = "p0002-fig-0000"
+    bundle = _make_bundle(
+        tmp_path,
+        [
+            _figure(fig_keep, 1, asset_path="assets/figures/p0001_fig0000.png"),
+            _figure(fig_drop, 2, asset_path="assets/figures/p0002_fig0000.png"),
+        ],
+    )
+    before = describe_status(bundle)
+    assert before["total_figures"] == 2
+    assert before["pending_figures"] == 2
+    merge_descriptions(
+        bundle,
+        [_not_a_figure_record(fig_drop, "整页混合内容，不是单一可描述的图。")],
+    )
+    after = describe_status(bundle)
+    assert after["total_figures"] == before["total_figures"] - 1
+    assert after["pending_figures"] == before["pending_figures"] - 1
+    pending = export_requests(bundle, pending_only=True)
+    assert [r["block_id"] for r in pending] == [fig_keep]
+    assert all(r["block_id"] != fig_drop for r in pending)
+
+
+def test_no_verdict_document_md_byte_identical(tmp_path):
+    fig_id = "p0001-fig-0001"
+    asset = "assets/figures/p0001_fig0001.png"
+    desc = "流程自左向右：输入经求解器后输出。"
+
+    def figures():
+        return [_figure(fig_id, 1, asset_path=asset)]
+
+    bundle_plain = _make_bundle(tmp_path / "plain", figures())
+    original = (bundle_plain / "document.md").read_bytes()
+    merge_descriptions(bundle_plain, [])
+    assert (bundle_plain / "document.md").read_bytes() == original
+
+    records = [_vlm_record(fig_id, desc)]
+    assert "verdict" not in records[0]
+    merge_descriptions(bundle_plain, records)
+    md_plain = (bundle_plain / "document.md").read_bytes()
+    assert md_plain != original
+    assert not (bundle_plain / "removed-blocks.jsonl").exists()
+
+    bundle_flag = _make_bundle(tmp_path / "flag", figures())
+    merge_descriptions(bundle_flag, [{**records[0], "verdict": "figure"}])
+    assert (bundle_flag / "document.md").read_bytes() == md_plain
+    ir = load_document_ir(bundle_plain / "document.ir.json")
+    assert any(b.block_id == fig_id for b in ir.blocks)
+
+
+def test_mixed_batch_describe_delete_and_reject(tmp_path):
+    fig_desc = "p0001-fig-0000"
+    fig_drop = "p0001-fig-0001"
+    fig_bad = "p0002-fig-0000"
+    fig_empty = "p0003-fig-0000"
+    bundle = _make_bundle(
+        tmp_path,
+        [
+            _figure(fig_desc, 1, asset_path="assets/figures/p0001_fig0000.png"),
+            _figure(fig_drop, 1, asset_path="assets/figures/p0001_fig0001.png"),
+            _figure(fig_bad, 2, asset_path="assets/figures/p0002_fig0000.png"),
+            _figure(fig_empty, 3, asset_path="assets/figures/p0003_fig0000.png"),
+        ],
+    )
+    report = merge_descriptions(
+        bundle,
+        [
+            _vlm_record(fig_desc, "流程自左向右：输入经求解器后输出。"),
+            _not_a_figure_record(fig_drop, "正文提示框：CAUTION！"),
+            {**_vlm_record(fig_bad, "非法判定不应应用。"), "verdict": "maybe"},
+            _not_a_figure_record(fig_empty, ""),
+        ],
+    )
+    assert report["described"] == 1
+    assert report["described_figures"] == 1
+    assert report["removed_not_a_figure"] == 1
+    assert report["removed_block_ids"] == [fig_drop]
+    assert report["rejected"]["bad_verdict"] == 1
+    assert report["rejected"]["missing_reason"] == 1
+    assert report["rejected"]["empty"] == 0
+    assert report["rejected"]["bad_round_trip"] == 0
+    assert report["rejected"]["wrong_type"] == 0
+    assert report["rejected"]["already_described"] == 0
+    assert report["total_figures"] == 3
+
+    ir = load_document_ir(bundle / "document.ir.json")
+    ids = [b.block_id for b in ir.blocks]
+    assert fig_drop not in ids
+    assert fig_desc in ids
+    assert fig_bad in ids
+    assert fig_empty in ids
+    assert not (bundle / "assets/figures/p0001_fig0001.png").exists()
+    assert (bundle / "assets/figures/p0002_fig0000.png").is_file()
+    assert (bundle / "assets/figures/p0003_fig0000.png").is_file()
+
+    md = (bundle / "document.md").read_text(encoding="utf-8")
+    assert f"<!-- block: {fig_drop} -->" not in md
+    assert f"<!-- block: {fig_desc} -->" in md
+    assert f"<!-- block: {fig_bad} -->" in md
+    assert f"<!-- block: {fig_empty} -->" in md
+    assert "> **【图：图3-1 工作流示例】**" in md
+    described = next(b for b in ir.blocks if b.block_id == fig_desc)
+    assert described.meta.get("description_source") == "vlm"
+    bad = next(b for b in ir.blocks if b.block_id == fig_bad)
+    assert bad.meta.get("description_source") != "vlm"
